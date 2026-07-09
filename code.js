@@ -83,8 +83,36 @@ function _eventsJsonp_(p) {
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
+// lt_match.json / uriage.json のJSONP配信（読み取り専用・鍵不要）。
+// ＝静的アプリ(ttsuperzuco.github.io/tt)がGAS専用API(DriveApp等)を直接呼べないため、
+// events と同じJSONP経由でデータだけ渡し、描画は純JSの render*Page_ 側で行う。
+function _ltJsonp_(p) {
+  var cb = String(p.callback || 'cb').replace(/[^A-Za-z0-9_$.]/g, '');
+  var payload;
+  try {
+    payload = JSON.parse(getLtFile_().getBlob().getDataAsString('UTF-8'));
+  } catch (e) {
+    payload = { error: String(e) };
+  }
+  return ContentService.createTextOutput(cb + '(' + JSON.stringify(payload) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+function _uriageJsonp_(p) {
+  var cb = String(p.callback || 'cb').replace(/[^A-Za-z0-9_$.]/g, '');
+  var payload;
+  try {
+    payload = JSON.parse(getUriageFile_().getBlob().getDataAsString('UTF-8'));
+  } catch (e) {
+    payload = { error: String(e) };
+  }
+  return ContentService.createTextOutput(cb + '(' + JSON.stringify(payload) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
 function handleAction_(p) {
   if (p.action === 'events') return _eventsJsonp_(p);
+  if (p.action === 'lt') return _ltJsonp_(p);
+  if (p.action === 'uriage') return _uriageJsonp_(p);
   if (p.key !== EDIT_KEY) return _jsonOut_({ ok: false, error: 'bad key' });
   var lock = LockService.getScriptLock();
   try { lock.tryLock(10000); } catch (ig) {}
@@ -123,6 +151,51 @@ function handleAction_(p) {
   return _jsonOut_(out);
 }
 
+// ========== スマホUIから直接呼ぶ（google.script.run）＝鍵不要・同オリジン ==========
+// 命令置き場は handleAction_ と同じ QUEUE_PROP を共用。事務所PCの edit_worker が
+// ?action=pending でこの依頼を拾い、move_calendar 実行後 ?action=report で結果を書く。
+// スマホ側はここ(uiStatus)で done/error を見に行く。EDIT_KEYはサーバ内なので露出しない。
+function uiSubmitMove(cal, event, toCal, toLabel, room, title) {
+  var lock = LockService.getScriptLock();
+  try { lock.tryLock(10000); } catch (ig) {}
+  try {
+    var q = _queueGet_();
+    var id = 'c' + Date.now() + Math.floor(Math.random() * 1000);
+    q.push({ id: id, ts: new Date().toISOString(), op: 'movecal',
+      cal: cal, event: event, to_cal: toCal, to_label: Number(toLabel),
+      room: room || '', title: title || '', status: 'pending', result: '' });
+    _queueSet_(q);
+    return id;
+  } finally {
+    try { lock.releaseLock(); } catch (ig2) {}
+  }
+}
+
+function uiStatus(id) {
+  var q = _queueGet_();
+  for (var i = 0; i < q.length; i++) {
+    if (q[i].id === id) return { status: q[i].status, result: q[i].result || '' };
+  }
+  return { status: 'notfound', result: '' };
+}
+
+// 売上TimeTree転記ボタン（オーナー版のみ）。命令置き場に op='uriage' を積むだけ。
+// 事務所PCの edit_worker が拾って run.py（新規記入のみ自動・上書き訂正はしない）を実行→report。
+function uiSubmitUriage() {
+  var lock = LockService.getScriptLock();
+  try { lock.tryLock(10000); } catch (ig) {}
+  try {
+    var q = _queueGet_();
+    var id = 'u' + Date.now() + Math.floor(Math.random() * 1000);
+    q.push({ id: id, ts: new Date().toISOString(), op: 'uriage',
+      status: 'pending', result: '' });
+    _queueSet_(q);
+    return id;
+  } finally {
+    try { lock.releaseLock(); } catch (ig2) {}
+  }
+}
+
 /** 画面遷移リンクの土台。
  *  警告バーを隠す「中継ページ(GitHub Pages)」の中でアプリを動かすため、
  *  メニュー↔検出などの遷移も中継ページURLに向ける（中継ページが ?view= を
@@ -159,6 +232,48 @@ function getEventsFile_() {
   return newest;
 }
 
+/** lt_match.json のファイルを取得（L⇔T照合の結果。事務所PCが export_lt_super.py で書き出す）。 */
+var LT_FILENAME = 'lt_match.json';
+function getLtFile_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('LT_FILE_ID');
+  if (id) {
+    try { return DriveApp.getFileById(id); } catch (ignore) { /* IDが古い→探し直す */ }
+  }
+  var it = DriveApp.getFilesByName(LT_FILENAME);
+  var newest = null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!newest || f.getLastUpdated() > newest.getLastUpdated()) newest = f;
+  }
+  if (!newest) {
+    throw new Error('lt_match.json がドライブに見つかりません。事務所PCで「予約照合」を実行（export_lt_super.py）し、Googleドライブの同期を待ってください。');
+  }
+  props.setProperty('LT_FILE_ID', newest.getId());
+  return newest;
+}
+
+/** uriage.json のファイルを取得（売上表示。事務所PCが export_uriage.py で書き出す）。 */
+var URIAGE_FILENAME = 'uriage.json';
+function getUriageFile_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('URIAGE_FILE_ID');
+  if (id) {
+    try { return DriveApp.getFileById(id); } catch (ignore) { /* IDが古い→探し直す */ }
+  }
+  var it = DriveApp.getFilesByName(URIAGE_FILENAME);
+  var newest = null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!newest || f.getLastUpdated() > newest.getLastUpdated()) newest = f;
+  }
+  if (!newest) {
+    throw new Error('uriage.json がドライブに見つかりません。事務所PCで export_uriage.py を実行し、Googleドライブの同期を待ってください。');
+  }
+  props.setProperty('URIAGE_FILE_ID', newest.getId());
+  return newest;
+}
+
 // ---- 表示（room_conflict_detect.py の render_html を移植。並び・色を一致させる）----
 
 var CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
@@ -168,6 +283,38 @@ function roomColor_(room) {
   var p = { 'FREEDOM': '#e11d48', 'COSMOS': '#7c3aed', 'HAPPY': '#f59e0b',
             'LUCKY': '#16a34a', 'STAR/福/🇫🇷': '#0ea5e9', 'NAIL': '#db2777' };
   return p[room] || '#64748b';
+}
+
+// 部屋名 → 移動先の (カレンダーID, ラベルID)。config.ROOM と同じ（部屋も揃えて移動＝B方式）。
+// ★config.py の ROOM と一致させること（片方直したら両方）。
+var ROOMS_ = {
+  'FREEDOM':      { cal: '73208496', label: 1 },
+  'COSMOS':       { cal: '59950873', label: 2 },
+  'HAPPY':        { cal: '59950855', label: 6 },
+  'LUCKY':        { cal: '59950871', label: 9 },
+  'STAR/福/🇫🇷': { cal: '86075789', label: 10 },
+  'NAIL':         { cal: '83695993', label: 7 }
+};
+
+// 被りカード内「A/Bを別の空き部屋へ移す」1行（現在の部屋は候補から除く）。
+function moveRow_(side, cal, event, who, title, curRoom) {
+  var hasId = (cal != null && cal !== '' && event != null && event !== '');
+  var btns = '';
+  for (var name in ROOMS_) {
+    if (name === curRoom) continue;   // 今と同じ部屋は出さない
+    var rm = ROOMS_[name];
+    btns += '<button type="button" class="mvbtn"' +
+      (hasId ? '' : ' disabled') +
+      ' data-cal="' + esc_(cal) + '" data-ev="' + esc_(event) + '"' +
+      ' data-tocal="' + rm.cal + '" data-tolabel="' + rm.label + '"' +
+      ' data-room="' + esc_(name) + '" data-title="' + esc_(title) + '" data-side="' + side + '"' +
+      ' style="--rc:' + roomColor_(name) + '">' + esc_(name) + '</button>';
+  }
+  var note = hasId ? '' : '<span class="mvng">IDが取れず移動不可</span>';
+  return '<div class="mvrow">' +
+    '<span class="mvlabel">' + side + '（' + esc_(who) + '）を→</span>' +
+    '<span class="mvbtns">' + btns + note + '</span>' +
+  '</div>';
 }
 
 function esc_(s) {
@@ -223,6 +370,15 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff) {
           ' data-cal="' + esc_(x.a_cal_id) + '" data-ev="' + esc_(x.a_event_id) + '"' +
           ' href="https://timetreeapp.com/calendars/' + esc_(x.a_cal_id) + '/events/' + esc_(x.a_event_id) + '">' +
           '📅 TimeTree Appを開く</a>' +
+        '<div class="mv" data-room="' + esc_(x.room) + '">' +
+          '<button type="button" class="mvtoggle">🔀 部屋を移して被りを解消</button>' +
+          '<div class="mvpanel" hidden>' +
+            moveRow_('A', x.a_cal_id, x.a_event_id, (x.a_staff || '') + ' ' + (x.a_name || ''), x.a_title, x.room) +
+            moveRow_('B', x.b_cal_id, x.b_event_id, (x.b_staff || '') + ' ' + (x.b_name || ''), x.b_title, x.room) +
+            '<div class="mvhint">選ぶと事務所PCがTimeTreeを書き換えます（削除はしません）。</div>' +
+          '</div>' +
+          '<div class="mvstatus" hidden></div>' +
+        '</div>' +
       '</article>';
     }).join('\n');
   }
@@ -241,7 +397,7 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff) {
   '<h1>⚠️ 施術室被り検出 <span class="cnt">' + real + '件</span>' + nailNote + '</h1>' +
   cards +
 '</div>' +
-TTSCRIPT_;
+TTSCRIPT_ + MOVESCRIPT_;
 }
 
 function renderError_(err, base, staff) {
@@ -272,7 +428,7 @@ function renderHome_(base, staff) {
   var uriageTile = staff ? '' :
       '<a class="tile uriage" href="' + base + '?view=uriage" target="_top">' +
         '<span class="ticon">💰</span>' +
-        '<span class="tname">売上TimeTree転記<span class="badge">Coming Soon</span></span>' +
+        '<span class="tname">売上TimeTree転記</span>' +
       '</a>';
   return '<style>' + HOMECSS_ + '</style>' +
   '<div class="home">' +
@@ -285,40 +441,294 @@ function renderHome_(base, staff) {
       '</a>' +
       '<a class="tile lt" href="' + base + '?view=lt' + sfx + '" target="_top">' +
         '<span class="ticon"><span class="lt2">' + LINE_LOGO_ + TT_LOGO_ + '</span></span>' +
-        '<span class="tname">L⇔T予約照合<span class="badge">Coming Soon</span></span>' +
+        '<span class="tname">L⇔T予約照合</span>' +
       '</a>' +
       uriageTile +
     '</div>' +
   '</div>';
 }
 
-/** L⇔T予約照合（中身は今後。今はおしゃれな準備中ページ）。 */
+/** L⇔T予約照合（LINEの予約 と TimeTree の予定を突き合わせた結果を表示）。
+ *  事務所PCが export_lt_super.py で書き出した lt_match.json を読むだけ（GASは判定しない）。 */
 function renderLT_(base, staff) {
-  return '<style>' + HOMECSS_ + '</style>' +
-  '<div class="home">' +
-    '<div class="hhead"><span class="bmark">🔗</span><span class="bname">L⇔T予約照合</span></div>' +
-    '<div class="soon">' +
-      '<div class="soonic">🚧</div>' +
-      '<div class="soontitle">Coming Soon</div>' +
-      '<div class="soondesc">この機能はこれから作ります。<br>もうしばらくお待ちください。</div>' +
-    '</div>' +
-    '<a class="backbtn" href="' + base + '?view=home' + (staff ? '&staff=1' : '') + '" target="_top">☰ メニューにもどる</a>' +
-  '</div>';
+  try {
+    var file = getLtFile_();
+    var d = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+    return renderLtPage_(d, base, staff);
+  } catch (err) {
+    return renderError_(err, base, staff);
+  }
 }
 
-/** 売上TimeTree転記（中身は今後。今はおしゃれな準備中ページ）。 */
+// L⇔T照合の1件カード（PC版ダッシュボード build_report_web.render_card のスマホ版）。
+function ltCard_(r) {
+  var cls = esc_(r.cls || 'check');
+  var status = esc_(r.status || '');
+  var name = r.name || '（名前不明）';
+  var search = esc_(((name) + ' ' + (r.code || '') + ' ' + (r.evidence || '')).toLowerCase());
+
+  var codeHtml = r.code ? '<span class="lcode">' + esc_(r.code) + '</span>' : '';
+
+  var chips = (r.chips || []).map(function (c) {
+    return '<span class="lchip ' + (c.on ? 'on' : 'off') + '">' + esc_(c.label) + '</span>';
+  }).join('');
+
+  var evHtml = r.evidence
+    ? '<div class="levi"><span class="lelab">LINE根拠</span><span>' + esc_(r.evidence) + '</span></div>'
+    : '';
+
+  var ttHtml = '<div class="ltt none">TimeTreeに該当予定なし</div>';
+  if (r.tt_title || r.tt_url) {
+    var link = '';
+    if (r.tt_url) {
+      // class="tt" ＋ data-cal/data-ev で TTSCRIPT_（Androidアプリ直起動）が効く。
+      link = '<a class="tt ltlink" target="_top" rel="noopener"' +
+             ' data-cal="' + esc_(r.calendar_id) + '" data-ev="' + esc_(r.event_id) + '"' +
+             ' href="' + esc_(r.tt_url) + '">TimeTreeで開く ↗</a>';
+    }
+    var body = r.tt_body
+      ? '<details class="ltbody"><summary>予定の内容を見る</summary><div>' + esc_(r.tt_body) + '</div></details>'
+      : '';
+    ttHtml = '<div class="ltt">' +
+      '<div class="ltrow"><span class="ltlab">TimeTree</span>' +
+      '<span class="lttime">' + esc_(r.tt_time || '—') + '</span>' + link + '</div>' +
+      '<div class="lttitle">' + esc_(r.tt_title || '') + '</div>' + body +
+    '</div>';
+  }
+
+  return '' +
+  '<article class="lcard ' + cls + '" data-status="' + status + '" data-search="' + search + '">' +
+    '<div class="lhead">' +
+      '<span class="lbadge ' + cls + '">' + esc_(r.status_label || status) + '</span>' +
+      '<span class="ldate">' + esc_(r.date || '') + '</span>' +
+      '<span class="lname">' + esc_(name) + '</span>' + codeHtml +
+    '</div>' +
+    '<div class="ltimes">' +
+      '<div class="tcol"><span class="tlab">LINE予約</span><span class="tval line">' + esc_(r.line_time || '—') + '</span></div>' +
+      '<span class="arr">→</span>' +
+      '<div class="tcol"><span class="tlab">TimeTree</span><span class="tval">' + esc_(r.tt_time || '—') + '</span></div>' +
+    '</div>' +
+    '<div class="lreason">' + esc_(r.reason_label || '') + '</div>' +
+    '<div class="laction"><span class="ldo">✔</span>' + esc_(r.action || '') + '</div>' +
+    '<div class="lchips">' + chips + '</div>' +
+    evHtml + ttHtml +
+  '</article>';
+}
+
+function renderLtPage_(d, base, staff) {
+  var c = d.counts || {};
+  var action = d.action || [];
+  var oks = d.ok || [];
+
+  var cards = action.length
+    ? action.map(ltCard_).join('\n')
+    : '<div class="lempty">要対応はありません 🎉</div>';
+
+  var okRows = oks.map(function (r) {
+    var srch = esc_(((r.name || '') + ' ' + (r.time || '')).toLowerCase());
+    return '<tr data-search="' + srch + '">' +
+      '<td>' + esc_(r.date || '') + '</td>' +
+      '<td>' + esc_(r.time || '') + '</td>' +
+      '<td>' + esc_(r.name || '') + '</td>' +
+      '<td class="ttc">' + esc_(r.tt_title || '') + '</td></tr>';
+  }).join('\n');
+
+  function stat(f, n, lab, kcls) {
+    return '<button type="button" class="lstat" data-f="' + f + '">' +
+      '<b class="' + (kcls || '') + '">' + (n || 0) + '</b><span>' + lab + '</span></button>';
+  }
+
+  return '' +
+'<style>' + LTCSS_ + '</style>' +
+'<div class="lwrap">' +
+  '<div class="lbar">' +
+    '<a class="lhome" href="' + (base || '') + '?view=home' + (staff ? '&staff=1' : '') + '" target="_top">← 前に戻る</a>' +
+    '<span class="lgen">照合: ' + esc_(d.generated_at || '—') + '</span>' +
+  '</div>' +
+  '<h1>🔗 L⇔T予約照合 <span class="lcnt">要対応 ' + (c.action || 0) + '件</span></h1>' +
+  '<div class="lsummary">' +
+    stat('all', c.action, '要対応', '') +
+    stat('time_mismatch', c.fix, '要修正', 'k-fix') +
+    stat('not_found', c.add, '要追加', 'k-add') +
+    stat('need_check', c.check, '要確認', 'k-chk') +
+    stat('ok', c.ok, 'OK', 'k-ok') +
+  '</div>' +
+  '<input id="lq" type="search" placeholder="名前・番号でしぼり込み（例: 林 / M346）">' +
+  '<div id="lcards">' + cards + '</div>' +
+  '<details class="loksec">' +
+    '<summary>OK（一致済み） ' + (c.ok || 0) + '件 ― タップで開く</summary>' +
+    '<table><thead><tr><th>日付</th><th>時刻</th><th>お客様</th><th>TimeTree予定</th></tr></thead>' +
+    '<tbody>' + okRows + '</tbody></table>' +
+  '</details>' +
+'</div>' +
+TTSCRIPT_ + LTSCRIPT_;
+}
+
+// 数字にカンマ（GAS側で self-completeに。toLocaleStringに頼らない）。
+function comma_(n) { return String(n == null ? '' : n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+/** 売上TimeTree転記（オーナー版のみ）。GAS(/exec)からの直アクセス用ラッパ：
+ *  事務所PCが export_uriage.py で書き出した uriage.json を DriveApp で読んで renderUriagePage_ に渡す。
+ *  ※静的アプリ(ttsuperzuco.github.io/tt)はDriveAppを呼べないので、こちらは使わずJSONP経由で
+ *    renderUriagePage_/renderUriageError_（純JS・GAS API不使用）を直接呼ぶ（index.html側）。 */
 function renderUriage_(base, staff) {
+  try {
+    var d = JSON.parse(getUriageFile_().getBlob().getDataAsString('UTF-8'));
+    return renderUriagePage_(d, base, staff);
+  } catch (err) {
+    return renderUriageError_(err, base, staff);
+  }
+}
+
+/** 売上ページの描画（純JS・GAS API不使用）。GAS直アクセスと静的アプリJSONPの両方から呼ばれる。 */
+function renderUriagePage_(d, base, staff) {
+  return '<style>' + HOMECSS_ + URIAGECSS_ + '</style>' +
+  '<div class="home">' +
+    '<div class="hhead"><span class="bmark">💰</span><span class="bname">売上TimeTree転記</span></div>' +
+    uriageBody_(d) +
+    '<a class="backbtn" href="' + base + '?view=home" target="_top">☰ メニューにもどる</a>' +
+  '</div>' +
+  URIAGESCRIPT_;
+}
+
+/** 売上データが読めない時の表示（純JS）。 */
+function renderUriageError_(err, base, staff) {
   return '<style>' + HOMECSS_ + '</style>' +
   '<div class="home">' +
     '<div class="hhead"><span class="bmark">💰</span><span class="bname">売上TimeTree転記</span></div>' +
     '<div class="soon">' +
-      '<div class="soonic">🚧</div>' +
-      '<div class="soontitle">Coming Soon</div>' +
-      '<div class="soondesc">この機能はこれから作ります。<br>もうしばらくお待ちください。</div>' +
+      '<div class="soonic">📄</div>' +
+      '<div class="soontitle" style="font-size:1.4rem">データ未生成</div>' +
+      '<div class="soondesc">' + esc_(err && err.message ? err.message : err) + '</div>' +
     '</div>' +
-    '<a class="backbtn" href="' + base + '?view=home' + (staff ? '&staff=1' : '') + '" target="_top">☰ メニューにもどる</a>' +
+    '<a class="backbtn" href="' + base + '?view=home" target="_top">☰ メニューにもどる</a>' +
   '</div>';
 }
+
+function uriageBody_(d) {
+  var today = d.today_str || '—';
+  var cum = d.cumulative_str || '—';
+  var monthLabel = d.month ? ('今月（' + d.month + '月）の売上') : '今月の売上';
+  var pl = d.plan || { missing_days: 0, mistake_days: 0, done_days: 0, days: [] };
+  var days = pl.days || [];
+  var missingDays = days.filter(function (x) { return x.status === 'missing'; });
+  var mistakeDays = days.filter(function (x) { return x.status === 'mistake'; });
+
+  // 1日ぶんの項目（当日額/累計）を「・」でつないで1行に。
+  function dayLi(x) { return '<li>' + esc_(x.label) + '：' + x.items.map(esc_).join('・') + '</li>'; }
+  var missList = missingDays.map(dayLi).join('');
+  var mistList = mistakeDays.map(dayLi).join('');
+  var perRows = (d.per_day || []).map(function (x) {
+    return '<tr><td>' + esc_(x.date) + '</td><td class="num">' + comma_(x.total) + '</td></tr>';
+  }).join('');
+
+  var nMissing = pl.missing_days || 0;
+  var btnLabel = nMissing > 0
+    ? ('▶ TimeTreeに転記する（未記入 ' + nMissing + '日ぶん）')
+    : '▶ 記入する（追加なし）';
+  var noteBox = d.note ? '<div class="unote">' + esc_(d.note) + '</div>' : '';
+
+  return '' +
+  noteBox +
+  '<div class="ucards">' +
+    '<div class="ucard"><div class="ul">今日の売上</div><div class="uv">' + esc_(today) + '</div></div>' +
+    '<div class="ucard"><div class="ul">' + esc_(monthLabel) + '</div><div class="uv">' + esc_(cum) + '</div></div>' +
+  '</div>' +
+  '<div class="uplan">' +
+    '<div class="uprow">' +
+      '<span class="upc"><b class="cr">' + nMissing + '</b><span>未記入</span></span>' +
+      '<span class="upc"><b class="up">' + (pl.mistake_days || 0) + '</b><span>記入ミス</span></span>' +
+      '<span class="upc"><b class="ok">' + (pl.done_days || 0) + '</b><span>記入完了</span></span>' +
+    '</div>' +
+    (missList ? '<div class="ublk"><b>未記入（これから自動で記入）</b><ul>' + missList + '</ul></div>' : '') +
+    (mistList ? '<div class="ublk warn"><b>記入ミス（内容を確認してください・アプリからは直しません）</b><ul>' + mistList + '</ul></div>' : '') +
+  '</div>' +
+  '<button type="button" id="ubtn" class="ubtn"' + (nMissing > 0 ? '' : ' data-empty="1"') + '>' + btnLabel + '</button>' +
+  '<div id="ustatus" class="ustatus" hidden></div>' +
+  '<details class="uper"><summary>各営業日の内訳を見る</summary>' +
+    '<table class="upertbl"><thead><tr><th>日</th><th class="num">売上(元)</th></tr></thead>' +
+    '<tbody>' + perRows + '</tbody></table>' +
+  '</details>' +
+  '<div class="ugen">最終計算：' + esc_(d.generated_at || '—') + '</div>';
+}
+
+// 転記ボタン：命令置き場に依頼→事務所PCが処理→uiStatusでpoll表示（部屋移動と同じ仕組み）。
+// ＋金額(.uv)がカード幅からはみ出す時だけ自動で文字を縮めて必ず1行に収める
+// （最大100万元台＝「1,000,000元」のような桁数でも折り返さない想定）。
+var URIAGESCRIPT_ =
+'<script>(function(){' +
+'var els=document.querySelectorAll(".uv");' +
+'for(var i=0;i<els.length;i++){' +
+'  var el=els[i]; var tries=0;' +
+'  while(el.scrollWidth>el.clientWidth && tries<20){' +
+'    var cur=parseFloat(getComputedStyle(el).fontSize);' +
+'    el.style.fontSize=(cur-1)+"px"; tries++;' +
+'  }' +
+'}' +
+'var b=document.getElementById("ubtn"); if(!b) return;' +
+'var st=document.getElementById("ustatus");' +
+'b.addEventListener("click",function(){' +
+'  var empty=b.getAttribute("data-empty")==="1";' +
+'  var msg=empty?"追加する新規記入はありません。念のため実行しますか？":' +
+'    "今日ぶんの売上をTimeTreeに記入します。よろしいですか？\\n（新規記入のみ・上書き訂正はしません）";' +
+'  if(!confirm(msg)) return;' +
+'  b.disabled=true; st.hidden=false; st.className="ustatus working"; st.textContent="⏳ 事務所PCに依頼中…";' +
+'  google.script.run' +
+'    .withSuccessHandler(function(id){ pollU(id); })' +
+'    .withFailureHandler(function(e){ st.className="ustatus err"; st.textContent="⚠️ 依頼に失敗："+e; b.disabled=false; })' +
+'    .uiSubmitUriage();' +
+'});' +
+'function pollU(id){' +
+'  st.textContent="⏳ 処理中…（帳簿を読んでTimeTreeに記入）"; var tries=0;' +
+'  var timer=setInterval(function(){ tries++;' +
+'    google.script.run.withSuccessHandler(function(r){' +
+'      var s=(r&&r.status)||"";' +
+'      if(s==="done"){ clearInterval(timer); st.className="ustatus ok"; st.textContent="✅ "+((r.result)||"転記しました")+"（画面を更新すると最新に）"; }' +
+'      else if(s==="error"||s==="failed"){ clearInterval(timer); st.className="ustatus err"; st.textContent="⚠️ 失敗："+((r.result)||s); }' +
+'      else if(tries>=60){ clearInterval(timer); st.className="ustatus err"; st.textContent="⚠️ 時間切れ。事務所PCの見張りが動いているか確認してください。"; }' +
+'    }).withFailureHandler(function(e){}).uiStatus(id);' +
+'  },3000);' +
+'}' +
+'})();</scr' + 'ipt>';
+
+var URIAGECSS_ =
+'  .unote { background:#fef9c3; color:#854d0e; border-radius:12px; padding:12px 14px;' +
+'    font-weight:700; font-size:.9rem; margin-bottom:14px; }' +
+'  .ucards { display:flex; gap:12px; margin-bottom:14px; }' +
+'  .ucard { flex:1; background:var(--card); border:1px solid var(--line); border-radius:16px;' +
+'    padding:16px 14px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,.06); }' +
+'  .ucard .ul { font-size:.82rem; color:var(--sub); font-weight:700; }' +
+'  .ucard .uv { font-size:1.7rem; font-weight:900; color:var(--ink); margin-top:6px;' +
+'    font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; }' +
+'  .uplan { background:var(--card); border:1px solid var(--line); border-radius:16px;' +
+'    padding:14px; box-shadow:0 4px 12px rgba(0,0,0,.06); }' +
+'  .uprow { display:flex; gap:8px; text-align:center; }' +
+'  .upc { flex:1; display:flex; flex-direction:column; gap:2px; }' +
+'  .upc b { font-size:1.5rem; font-weight:900; line-height:1; }' +
+'  .upc span { font-size:.7rem; color:var(--sub); font-weight:700; }' +
+'  .upc b.cr { color:#16a34a; } .upc b.up { color:#d97706; }' +
+'  .upc b.mn { color:#e11d48; } .upc b.ok { color:var(--sub); }' +
+'  .ublk { margin-top:12px; border-top:1px dashed var(--line); padding-top:10px; }' +
+'  .ublk b { font-size:.86rem; }' +
+'  .ublk.warn b { color:#b45309; }' +
+'  .ublk ul { margin:6px 0 0; padding-left:1.2em; }' +
+'  .ublk li { font-size:.9rem; line-height:1.5; }' +
+'  .ubtn { display:block; width:100%; margin-top:16px; font-size:1.15rem; font-weight:800;' +
+'    color:#fff; background:#f59e0b; border:0; border-radius:14px; padding:16px; cursor:pointer;' +
+'    box-shadow:0 4px 14px rgba(245,158,11,.4); }' +
+'  .ubtn:active { transform:translateY(1px); }' +
+'  .ubtn:disabled { opacity:.55; }' +
+'  .ustatus { margin-top:12px; padding:13px 14px; border-radius:12px; font-size:1rem; font-weight:700; }' +
+'  .ustatus.working { background:#fef9c3; color:#854d0e; }' +
+'  .ustatus.ok { background:#dcfce7; color:#166534; }' +
+'  .ustatus.err { background:#fee2e2; color:#991b1b; }' +
+'  .uper { margin-top:14px; background:var(--card); border:1px solid var(--line);' +
+'    border-radius:12px; padding:6px 14px; }' +
+'  .uper summary { cursor:pointer; font-weight:700; font-size:.9rem; padding:8px 0; color:var(--ink); }' +
+'  .upertbl { width:100%; border-collapse:collapse; margin:6px 0 10px; font-size:.92rem; }' +
+'  .upertbl th, .upertbl td { border-bottom:1px solid var(--line); padding:7px 8px; text-align:left; }' +
+'  .upertbl .num { text-align:right; font-variant-numeric:tabular-nums; }' +
+'  .ugen { text-align:center; color:rgba(255,255,255,.9); font-size:.78rem; margin-top:14px; }';
 
 // Androidは intent:// でTimeTreeアプリを直接起動（LINE内ブラウザからでも開く）。
 // iOSは https のユニバーサルリンクのまま（Safariで開けばアプリに渡る）。
@@ -332,6 +742,140 @@ var TTSCRIPT_ =
 'L[i].setAttribute("href","intent://timetreeapp.com/calendars/"+c+"/events/"+ev+' +
 '"#Intent;scheme=https;package=works.jubilee.timetree;S.browser_fallback_url="+encodeURIComponent(w)+";end");' +
 '}})();</scr' + 'ipt>';
+
+// 部屋付け替えのUI操作（トグル→依頼→処理中→結果）。google.script.run で同オリジン呼び出し。
+var MOVESCRIPT_ =
+'<script>(function(){' +
+'var wrap=document.querySelector(".wrap"); if(!wrap) return;' +
+'wrap.addEventListener("click",function(ev){' +
+'  var t=ev.target;' +
+'  if(t.classList&&t.classList.contains("mvtoggle")){' +
+'    var pn=t.parentNode.querySelector(".mvpanel"); if(pn) pn.hidden=!pn.hidden; return;' +
+'  }' +
+'  if(t.classList&&t.classList.contains("mvbtn")){' +
+'    if(t.disabled) return;' +
+'    var mv=t; while(mv&&!(mv.classList&&mv.classList.contains("mv"))) mv=mv.parentNode; if(!mv) return;' +
+'    var cal=t.getAttribute("data-cal"), evid=t.getAttribute("data-ev");' +
+'    var toCal=t.getAttribute("data-tocal"), toLabel=t.getAttribute("data-tolabel");' +
+'    var room=t.getAttribute("data-room"), title=t.getAttribute("data-title"), side=t.getAttribute("data-side");' +
+'    if(!cal||!evid){ alert("この予約のIDが取れず移動できません"); return; }' +
+'    if(!confirm(side+"を「"+room+"」へ移動します。よろしいですか？\\n（事務所PCがTimeTreeを書き換えます・削除はしません）")) return;' +
+'    var pn=mv.querySelector(".mvpanel"); if(pn) pn.hidden=true;' +
+'    var st=mv.querySelector(".mvstatus"); st.hidden=false; st.className="mvstatus working"; st.textContent="⏳ 事務所PCに依頼中…";' +
+'    google.script.run' +
+'      .withSuccessHandler(function(id){ pollMove(st,id,room); })' +
+'      .withFailureHandler(function(e){ st.className="mvstatus err"; st.textContent="⚠️ 依頼に失敗しました："+e; })' +
+'      .uiSubmitMove(cal,evid,toCal,toLabel,room,title);' +
+'  }' +
+'});' +
+'function pollMove(st,id,room){' +
+'  st.textContent="⏳ 処理中…（"+room+"へ移動）"; var tries=0;' +
+'  var timer=setInterval(function(){ tries++;' +
+'    google.script.run.withSuccessHandler(function(r){' +
+'      var s=(r&&r.status)||"";' +
+'      if(s==="done"){ clearInterval(timer); st.className="mvstatus ok"; st.textContent="✅ "+((r.result)||(room+"へ移動しました")); }' +
+'      else if(s==="error"||s==="failed"){ clearInterval(timer); st.className="mvstatus err"; st.textContent="⚠️ 失敗："+((r.result)||s); }' +
+'      else if(tries>=40){ clearInterval(timer); st.className="mvstatus err"; st.textContent="⚠️ 時間切れ。事務所PCの見張りが動いているか確認してください。"; }' +
+'    }).withFailureHandler(function(e){}).uiStatus(id);' +
+'  },3000);' +
+'}' +
+'})();</scr' + 'ipt>';
+
+// L⇔T予約照合ページ用スタイル（自己完結・ダーク/ライト対応・スマホ第一）。
+var LTCSS_ =
+'  :root{ --bg:#2C7A99; --card:#ffffff; --ink:#1c2430; --sub:#667085; --line:#e6e9ef;' +
+'    --fix:#e5484d; --add:#d97706; --chk:#eab308; --ok:#16a34a;' +
+'    --fixbg:#fff1f1; --addbg:#fff6ea; --chkbg:#fffbe6; }' +
+'  @media (prefers-color-scheme:dark){ :root{ --card:#1b2430; --ink:#e8ebf0; --sub:#9aa4b2;' +
+'    --line:#2a3441; --fixbg:#2a1416; --addbg:#2a1f10; --chkbg:#26230f; } }' +
+'  *{ box-sizing:border-box; }' +
+'  body{ margin:0; background:var(--bg); color:var(--ink);' +
+'    font-family:"Segoe UI","Yu Gothic UI","Hiragino Sans",system-ui,sans-serif; line-height:1.5; }' +
+'  .lwrap{ max-width:640px; margin:0 auto; padding:16px 14px 60px; }' +
+'  .lbar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }' +
+'  .lhome{ color:#fff; text-decoration:none; font-weight:700; font-size:14px;' +
+'    background:rgba(255,255,255,.16); padding:7px 12px; border-radius:10px; }' +
+'  .lgen{ color:#eaf3f7; font-size:11px; opacity:.9; }' +
+'  h1{ color:#fff; font-size:19px; margin:6px 0 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }' +
+'  .lcnt{ font-size:13px; background:rgba(255,255,255,.18); padding:2px 10px; border-radius:999px; font-weight:700; }' +
+'  .lsummary{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }' +
+'  .lstat{ flex:1 1 auto; min-width:78px; background:var(--card); border:1px solid var(--line);' +
+'    border-radius:12px; padding:8px 6px; cursor:pointer; text-align:center; color:var(--ink); font:inherit; }' +
+'  .lstat b{ display:block; font-size:22px; line-height:1.1; }' +
+'  .lstat span{ font-size:11px; color:var(--sub); }' +
+'  .lstat.sel{ outline:2px solid var(--ink); }' +
+'  .lstat .k-fix{ color:var(--fix); } .lstat .k-add{ color:var(--add); }' +
+'  .lstat .k-chk{ color:var(--chk); } .lstat .k-ok{ color:var(--ok); }' +
+'  #lq{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;' +
+'    background:var(--card); color:var(--ink); font-size:15px; margin-bottom:14px; }' +
+'  .lcard{ background:var(--card); border:1px solid var(--line); border-left:6px solid var(--sub);' +
+'    border-radius:12px; padding:12px 14px; margin-bottom:10px; }' +
+'  .lcard.fix{ border-left-color:var(--fix); background:var(--fixbg); }' +
+'  .lcard.add{ border-left-color:var(--add); background:var(--addbg); }' +
+'  .lcard.check{ border-left-color:var(--chk); background:var(--chkbg); }' +
+'  .lhead{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; }' +
+'  .lbadge{ font-size:11px; font-weight:800; color:#fff; padding:2px 9px; border-radius:999px; }' +
+'  .lbadge.fix{ background:var(--fix); } .lbadge.add{ background:var(--add); }' +
+'  .lbadge.check{ background:var(--chk); color:#5a4a00; }' +
+'  .ldate{ color:var(--sub); font-size:12px; font-variant-numeric:tabular-nums; }' +
+'  .lname{ font-weight:800; font-size:15px; }' +
+'  .lcode{ font-size:11px; color:var(--sub); border:1px solid var(--line); border-radius:6px; padding:0 6px; }' +
+'  .ltimes{ display:flex; align-items:center; gap:12px; margin:10px 0 8px; }' +
+'  .tcol{ display:flex; flex-direction:column; }' +
+'  .tlab{ font-size:10px; color:var(--sub); }' +
+'  .tval{ font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; }' +
+'  .tval.line{ color:var(--fix); }' +
+'  .lcard.ok .tval.line,.lcard.check .tval.line{ color:inherit; }' +
+'  .arr{ color:var(--sub); font-size:17px; }' +
+'  .lreason{ font-size:12.5px; color:var(--sub); margin-bottom:5px; }' +
+'  .laction{ font-size:14px; font-weight:700; display:flex; gap:7px; align-items:flex-start; margin-bottom:9px; }' +
+'  .ldo{ color:var(--ok); }' +
+'  .lchips{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }' +
+'  .lchip{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }' +
+'  .lchip.on{ background:#e7f6ec; border-color:#bfe6cd; color:#137a3b; }' +
+'  .lchip.off{ color:var(--sub); opacity:.5; }' +
+'  @media (prefers-color-scheme:dark){ .lchip.on{ background:#12331f; border-color:#1f5133; color:#5fd08a; } }' +
+'  .levi,.ltt{ background:rgba(127,127,127,.06); border:1px solid var(--line); border-radius:9px;' +
+'    padding:8px 10px; margin-top:7px; font-size:12.5px; }' +
+'  .lelab,.ltlab{ font-size:10px; color:var(--sub); margin-right:8px; }' +
+'  .ltrow{ display:flex; align-items:center; gap:10px; margin-bottom:2px; }' +
+'  .lttime{ font-weight:800; } .lttitle{ font-size:13.5px; }' +
+'  .ltt.none{ color:var(--sub); }' +
+'  .ltlink{ margin-left:auto; font-size:12px; color:#2563eb; text-decoration:none; font-weight:700; }' +
+'  .ltbody{ margin-top:6px; } .ltbody summary{ cursor:pointer; color:var(--sub); font-size:12px; }' +
+'  .ltbody div{ margin-top:6px; color:var(--sub); font-size:12px; white-space:pre-wrap; }' +
+'  .lempty{ text-align:center; color:#fff; padding:26px; font-weight:700; }' +
+'  .loksec{ margin-top:18px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:4px 12px; }' +
+'  .loksec summary{ cursor:pointer; font-weight:800; padding:9px 0; }' +
+'  .loksec table{ width:100%; border-collapse:collapse; font-size:12.5px; }' +
+'  .loksec th,.loksec td{ text-align:left; padding:6px 6px; border-bottom:1px solid var(--line); vertical-align:top; }' +
+'  .loksec th{ color:var(--sub); font-weight:700; } .loksec td.ttc{ color:var(--sub); }' +
+'  .lhidden{ display:none!important; }';
+
+// L⇔T照合ページの絞り込み（区分ボタン＋名前/番号の検索）。
+var LTSCRIPT_ =
+'<script>(function(){' +
+'var q=document.getElementById("lq"); if(!q) return;' +
+'var cards=[].slice.call(document.querySelectorAll(".lcard"));' +
+'var stats=[].slice.call(document.querySelectorAll(".lstat"));' +
+'var filter="all";' +
+'function apply(){' +
+'  var kw=(q.value||"").trim().toLowerCase();' +
+'  cards.forEach(function(c){' +
+'    var okS=(filter==="all"||c.getAttribute("data-status")===filter);' +
+'    var okK=(!kw||(c.getAttribute("data-search")||"").indexOf(kw)>=0);' +
+'    c.classList.toggle("lhidden",!(okS&&okK));' +
+'  });' +
+'}' +
+'q.addEventListener("input",apply);' +
+'stats.forEach(function(s){ s.addEventListener("click",function(){' +
+'  var f=s.getAttribute("data-f");' +
+'  if(f==="ok"){ var ok=document.querySelector(".loksec"); if(ok){ ok.open=true; ok.scrollIntoView({behavior:"smooth"}); } return; }' +
+'  filter=(filter===f)?"all":f;' +
+'  stats.forEach(function(x){ x.classList.toggle("sel", x.getAttribute("data-f")===filter && filter!=="all"); });' +
+'  apply();' +
+'}); });' +
+'})();</scr' + 'ipt>';
 
 // メニュー／準備中ページ用のおしゃれスタイル（自己完結・ダーク/ライト対応）
 var HOMECSS_ =
@@ -454,4 +998,24 @@ var CSS_ =
 '  .vs { border-top:2px dashed var(--sub); margin:6px 2px; opacity:.85; }' +
 '  .empty { background:var(--card); border:1px solid var(--line); border-radius:12px;' +
 '    padding:40px; text-align:center; font-size:1.15rem; color:#16a34a; }' +
+'  .mv { margin-top:8px; }' +
+'  .mvtoggle { width:100%; text-align:center; font-size:.9rem; font-weight:700; color:var(--ink);' +
+'    background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px; cursor:pointer; }' +
+'  .mvtoggle:active { transform:translateY(1px); }' +
+'  .mvpanel { margin-top:8px; background:var(--bg); border:1px solid var(--line);' +
+'    border-radius:10px; padding:8px 10px; }' +
+'  .mvrow { display:flex; flex-direction:column; gap:6px; padding:6px 0; }' +
+'  .mvrow + .mvrow { border-top:1px dashed var(--line); }' +
+'  .mvlabel { font-size:.86rem; font-weight:700; color:var(--ink); }' +
+'  .mvbtns { display:flex; flex-wrap:wrap; gap:7px; }' +
+'  .mvbtn { font-size:.92rem; font-weight:800; color:#fff; background:var(--rc,#64748b);' +
+'    border:0; border-radius:999px; padding:9px 14px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.18); }' +
+'  .mvbtn:active { transform:translateY(1px); }' +
+'  .mvbtn:disabled { opacity:.4; }' +
+'  .mvng { font-size:.8rem; color:var(--sub); align-self:center; }' +
+'  .mvhint { font-size:.74rem; color:var(--sub); margin-top:6px; line-height:1.5; }' +
+'  .mvstatus { margin-top:8px; padding:11px 12px; border-radius:10px; font-size:.95rem; font-weight:700; }' +
+'  .mvstatus.working { background:#fef9c3; color:#854d0e; }' +
+'  .mvstatus.ok { background:#dcfce7; color:#166534; }' +
+'  .mvstatus.err { background:#fee2e2; color:#991b1b; }' +
 '';

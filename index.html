@@ -92,10 +92,39 @@
     document.body.appendChild(s);
   }
 
+  // lt/uriage も conflict と同じJSONP方式：GAS専用API(DriveApp等)はブラウザに無いので、
+  // データだけJSONPで取り、描画は純JS(renderLtPage_/renderUriagePage_)で行う
+  // （renderLT_/renderUriage_ をここで直接呼ぶとDriveApp未定義で必ずエラー表示になる＝2026-07-10修正）。
+  function showLt() {
+    window.__ttLt = function (payload) {
+      try {
+        if (!payload || payload.error) { fail('データ取得エラー：' + ((payload && payload.error) || '不明')); return; }
+        mount(renderLtPage_(payload, base, staff));
+      } catch (e) { fail('描画エラー：' + e); }
+    };
+    var s = document.createElement('script');
+    s.src = EXEC + '?action=lt&callback=__ttLt&cb=' + Date.now();
+    s.onerror = function () { fail('データに接続できませんでした。通信環境をご確認ください。'); };
+    document.body.appendChild(s);
+  }
+
+  function showUriage() {
+    window.__ttUriage = function (payload) {
+      try {
+        if (!payload || payload.error) { mount(renderUriageError_((payload && payload.error) || '不明', base, staff)); return; }
+        mount(renderUriagePage_(payload, base, staff));
+      } catch (e) { fail('描画エラー：' + e); }
+    };
+    var s = document.createElement('script');
+    s.src = EXEC + '?action=uriage&callback=__ttUriage&cb=' + Date.now();
+    s.onerror = function () { fail('データに接続できませんでした。通信環境をご確認ください。'); };
+    document.body.appendChild(s);
+  }
+
   if (view === 'lt') {
-    mount(renderLT_(base, staff));
+    showLt();
   } else if (view === 'uriage' && !staff) {
-    mount(renderUriage_(base, staff));
+    showUriage();
   } else if (view === 'conflict') {
     showConflict();
   } else {
