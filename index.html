@@ -5,26 +5,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TTスーパーズコApp</title>
 <style>
-  html, body { margin:0; height:100%; background:#2C7A99; color:#fff;
-    font-family:"Segoe UI","Hiragino Sans",system-ui,sans-serif; }
-  .m { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    font-size:16px; opacity:.9; }
+  html, body { margin:0; background:#2C7A99; }
+  #root { min-height:100vh; }
+  .boot { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#fff; opacity:.85; font-family:"Segoe UI","Hiragino Sans",system-ui,sans-serif; }
 </style>
 </head>
 <body>
-<div class="m">ひらいています…</div>
+<div id="root"><div class="boot">よみこみ中…</div></div>
+
+<!-- 判定コア(detect)と、GASと共通の描画関数(renderHome_/renderPage_ など)。
+     どちらも純JS。GAS専用の関数(doGet等)は同梱されるが呼ばれないだけ。 -->
+<script src="detect_core.js"></script>
+<script src="code.js"></script>
 <script>
+(function () {
+  // 施術室被りデータは公開リポジトリに置かず、GASからJSONPで取得する
+  // （このページはGASを表示しないので、Googleの「別ユーザー作成」警告バーは出ない）。
   var EXEC = "https://script.google.com/macros/s/AKfycbwEpGPZhvGCbea6qoft-_TRCgvp5t0ieNf5kDCuFs9-1VYJi7r5RPgTPBM7AEBqPPLL4A/exec";
-  // 以前はGASをiframeで埋め込んでいたが、Firefoxやスマホ/LINE内ブラウザが
-  // 他サイト(script.google.com)の埋め込みを弾いて「ウェブページにアクセスできません」に
-  // なるため、埋め込みをやめて“直接”そのアプリへ移動する（＝全端末で確実に開く）。
-  // このページのクエリ(?view=…&staff=1 等)はそのまま渡す。
-  location.replace(EXEC + (location.search || ""));
+
+  var params = new URLSearchParams(location.search);
+  var view  = params.get('view') || 'home';
+  var staff = params.get('staff') === '1';
+  var nail  = params.get('nail') === '1';
+  var base  = location.pathname;   // メニュー内の遷移は同じページの ?view= を切り替えるだけ
+
+  function runScripts(container) {
+    // innerHTMLで挿入した<script>は実行されないので、作り直して実行する
+    // （renderPage_ 内の TTSCRIPT_＝Android用 intent 差し替え などを効かせるため）。
+    var list = container.querySelectorAll('script');
+    for (var i = 0; i < list.length; i++) {
+      var old = list[i];
+      var s = document.createElement('script');
+      if (old.src) s.src = old.src; else s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    }
+  }
+
+  function mount(html) {
+    var root = document.getElementById('root');
+    root.innerHTML = html;
+    runScripts(root);
+    window.scrollTo(0, 0);
+  }
+
+  function fail(msg) {
+    document.getElementById('root').innerHTML =
+      '<div class="boot" style="text-align:center;padding:1.5em;">' + msg + '</div>';
+  }
+
+  function showConflict() {
+    // JSONPでデータ取得 → detect（判定）→ renderPage_（描画）。すべてブラウザ内で完結。
+    window.__ttEvents = function (payload) {
+      try {
+        if (!payload || payload.error) { fail('データ取得エラー：' + ((payload && payload.error) || '不明')); return; }
+        var res = detect(payload.events, nail, payload.date_from);
+        mount(renderPage_(res.conflicts, res.meta, payload, nail, base, staff));
+      } catch (e) { fail('描画エラー：' + e); }
+    };
+    var s = document.createElement('script');
+    s.src = EXEC + '?action=events&callback=__ttEvents&cb=' + Date.now();
+    s.onerror = function () { fail('データに接続できませんでした。通信環境をご確認ください。'); };
+    document.body.appendChild(s);
+  }
+
+  if (view === 'lt') {
+    mount(renderLT_(base, staff));
+  } else if (view === 'uriage' && !staff) {
+    mount(renderUriage_(base, staff));
+  } else if (view === 'conflict') {
+    showConflict();
+  } else {
+    mount(renderHome_(base, staff));
+  }
+})();
 </script>
-<noscript>
-  <p style="text-align:center;padding:2em;">
-    <a style="color:#fff;" href="https://script.google.com/macros/s/AKfycbwEpGPZhvGCbea6qoft-_TRCgvp5t0ieNf5kDCuFs9-1VYJi7r5RPgTPBM7AEBqPPLL4A/exec">こちらをタップして開く</a>
-  </p>
-</noscript>
 </body>
 </html>
