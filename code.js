@@ -518,8 +518,8 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff, dev) {
           '📅 TimeTree Appを開く</a>' +
         '<div class="mv" data-room="' + esc_(x.room) + '">' +
           '<div class="mvtoprow">' +
-            '<button type="button" class="mvtoggle">🔀 部屋を移して被りを解消</button>' +
-            '<button type="button" class="rstoggle">📋 空き部屋状況を見る</button>' +
+            '<button type="button" class="mvtoggle">🔀 部屋を移して<br>被りを解消</button>' +
+            '<button type="button" class="rstoggle">📋 空き部屋<br>状況を見る</button>' +
           '</div>' +
           roomStatusPanel_(x.date, roomBusyForDate) +
           '<div class="mvpanel" hidden>' +
@@ -952,11 +952,11 @@ var MOVESCRIPT_ =
 '  var t=ev.target;' +
 '  if(t.classList&&t.classList.contains("rstoggle")){' +
 '    var card=t; while(card&&!(card.classList&&card.classList.contains("card"))) card=card.parentNode; if(!card) return;' +
-'    var pn=card.querySelector(".rspanel"); if(pn) pn.hidden=!pn.hidden; return;' +
+'    var pn=card.querySelector(".rspanel"); if(pn) pn.hidden=!pn.hidden; t.classList.toggle("open",!pn.hidden); return;' +
 '  }' +
 '  if(t.classList&&t.classList.contains("mvtoggle")){' +
 '    var mvw=t; while(mvw&&!(mvw.classList&&mvw.classList.contains("mv"))) mvw=mvw.parentNode; if(!mvw) return;' +
-'    var pn=mvw.querySelector(".mvpanel"); if(pn) pn.hidden=!pn.hidden; return;' +
+'    var pn=mvw.querySelector(".mvpanel"); if(pn) pn.hidden=!pn.hidden; t.classList.toggle("open",!pn.hidden); return;' +
 '  }' +
 '  if(t.classList&&t.classList.contains("mvbtn")){' +
 '    if(t.disabled) return;' +
@@ -1140,15 +1140,16 @@ var CSS_ =
 '  body { margin:0; padding:0; background:#2C7A99; color:var(--ink);' +
 '    font-family:"Segoe UI","Yu Gothic UI","Hiragino Sans",system-ui,sans-serif; }' +
 '  .wrap { max-width:820px; margin:0 auto; padding:12px 12px 22px; }' +
-'  .bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap;' +
+'  .bar { display:flex; align-items:center; gap:10px; flex-wrap:nowrap;' +
 '    background:#2C7A99; padding:4px 0 8px; margin-bottom:6px; }' +
 '  .reload { font-size:1rem; font-weight:700; color:#fff; background:#2563eb; border:0;' +
 '    border-radius:10px; padding:12px 18px; cursor:pointer; }' +
 '  .reload:active { transform:translateY(1px); }' +
 '  .fresh { font-size:.78rem; color:var(--sub); }' +
-'  .fetched { display:flex; flex-direction:column; gap:2px; font-size:.82rem; color:rgba(255,255,255,.82); }' +
+'  .fetched { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px;' +
+'    font-size:.74rem; color:rgba(255,255,255,.82); }' +
 '  .fetched b { font-weight:700; color:#fff; margin-right:4px; }' +
-'  .homelink { font-size:.9rem; font-weight:700; color:var(--ink); text-decoration:none;' +
+'  .homelink { flex:0 0 auto; font-size:.9rem; font-weight:700; color:var(--ink); text-decoration:none;' +
 '    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }' +
 '  .homelink:active { transform:translateY(1px); }' +
 '  h1 { font-size:1.05rem; margin:4px 0 8px; color:#fff; }' +
@@ -1206,10 +1207,13 @@ var CSS_ =
 '  .empty { background:var(--card); border:1px solid var(--line); border-radius:12px;' +
 '    padding:40px; text-align:center; font-size:1.15rem; color:#16a34a; }' +
 '  .mv { margin-top:8px; }' +
-'  .mvtoprow { display:flex; gap:8px; }' +
-'  .mvtoggle { flex:1 1 auto; text-align:center; font-size:.9rem; font-weight:700; color:var(--ink);' +
-'    background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px; cursor:pointer; }' +
-'  .mvtoggle:active { transform:translateY(1px); }' +
+'  .mvtoprow { display:flex; gap:8px; align-items:stretch; }' +
+'  .mvtoggle, .rstoggle { flex:1 1 0; text-align:center; font-size:.85rem; font-weight:700;' +
+'    line-height:1.4; white-space:normal; color:#fff; background:#2563eb; border:1px solid #2563eb;' +
+'    border-radius:10px; padding:9px 6px; cursor:pointer; }' +
+'  .mvtoggle:active, .rstoggle:active { transform:translateY(1px); }' +
+'  .mvtoggle.open, .rstoggle.open { color:var(--ink); background:var(--card); border-color:var(--line);' +
+'    box-shadow:inset 0 2px 5px rgba(0,0,0,.2); }' +
 '  .mvpanel { margin-top:8px; background:var(--bg); border:1px solid var(--line);' +
 '    border-radius:10px; padding:8px 10px; }' +
 '  .mvrow { display:flex; flex-direction:column; gap:6px; padding:6px 0; }' +
@@ -1226,9 +1230,6 @@ var CSS_ =
 '  .mvstatus.working { background:#fef9c3; color:#854d0e; }' +
 '  .mvstatus.ok { background:#dcfce7; color:#166534; }' +
 '  .mvstatus.err { background:#fee2e2; color:#991b1b; }' +
-'  .rstoggle { flex:0 0 auto; font-size:.78rem; font-weight:700; color:var(--ink); background:var(--bg);' +
-'    border:1px solid var(--line); border-radius:10px; padding:9px 12px; cursor:pointer; white-space:nowrap; }' +
-'  .rstoggle:active { transform:translateY(1px); }' +
 '  .rspanel { margin:8px 0 0; background:var(--bg); border:1px solid var(--line);' +
 '    border-radius:10px; padding:8px 10px; }' +
 '  .rstitle { font-size:.8rem; font-weight:700; color:var(--sub); margin-bottom:6px; }' +
