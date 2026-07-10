@@ -1360,27 +1360,31 @@ var HOMECSS_ =
 '  .bname { font-size:1.66rem; font-weight:800; letter-spacing:.01em; color:#fff; }' +
 '  .hsub { text-align:center; color:#fff; font-weight:800; font-size:1.02rem;' +
 '    letter-spacing:.06em; opacity:.92; margin:0 0 28px; }' +
-'  .tiles { display:flex; flex-direction:column; gap:14px; }' +
-'  .tile { display:flex; align-items:center; gap:14px; text-decoration:none; color:var(--ink);' +
-'    background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px 20px;' +
-'    box-shadow:0 6px 18px rgba(0,0,0,.07); position:relative; overflow:hidden;' +
+// タイルはスマホ1画面に最大8個(2列×4行)並ぶ想定のグリッド。現状4個は自然に上半分(2行)に収まる。
+// アイコン上/文字下の正方形寄りカード＝横長1行レイアウトをやめたので、文言が長くても2行で
+// 普通に読める（「LINE未回答＆返信待ち」等をこれ以上1行に収めようと縮小・省略しなくてよい）。
+'  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:12px; }' +
+'  .tile { display:flex; flex-direction:column; align-items:center; justify-content:center;' +
+'    gap:8px; text-align:center; text-decoration:none; color:var(--ink);' +
+'    background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px 10px;' +
+'    box-shadow:0 6px 18px rgba(0,0,0,.07); position:relative; overflow:hidden; min-height:118px;' +
 '    transition:transform .12s ease, box-shadow .12s ease; }' +
-'  .tile::before { content:""; position:absolute; left:0; top:0; bottom:0; width:6px; }' +
+'  .tile::before { content:""; position:absolute; left:0; top:0; right:0; width:auto; height:6px; }' +
 '  .tile.conflict::before { background:#e11d48; }' +
 '  .tile.lt::before { background:#6366f1; }' +
 '  .tile.uriage::before { background:#f59e0b; }' +
 '  .tile.unanswered::before { background:#0d9b6c; }' +
 '  .tile:active { transform:translateY(2px); box-shadow:0 3px 10px rgba(0,0,0,.10); }' +
 '  @media (hover:hover){ .tile:hover { transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.12); } }' +
-'  .ticon { flex:none; width:60px; height:60px; border-radius:15px; font-size:32px;' +
+'  .ticon { flex:none; width:52px; height:52px; border-radius:14px; font-size:28px;' +
 '    display:grid; place-items:center; }' +
 '  .tile.conflict .ticon { background:rgba(225,29,72,.12); }' +
 '  .tile.lt .ticon { background:rgba(148,163,184,.14); }' +
 '  .tile.uriage .ticon { background:rgba(245,158,11,.16); }' +
 '  .tile.unanswered .ticon { background:rgba(13,155,108,.12); }' +
 '  .lt2 { display:inline-flex; align-items:center; gap:3px; }' +
-'  .tname { flex:1; min-width:0; font-size:.98rem; font-weight:800; white-space:nowrap;' +
-'    overflow:hidden; text-overflow:ellipsis; }' +
+'  .tname { font-size:.88rem; font-weight:800; white-space:normal; line-height:1.3;' +
+'    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }' +
 '  .badge { display:inline-block; font-size:.9rem; font-weight:800; color:#fff; background:#f97316;' +
 '    border-radius:999px; padding:4px 12px; vertical-align:middle;' +
 '    letter-spacing:.03em; white-space:nowrap; box-shadow:0 2px 8px rgba(249,115,22,.45); }' +
