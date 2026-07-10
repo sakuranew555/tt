@@ -426,8 +426,10 @@ var ROOMS_ = {
   'LUCKY':        { cal: '59950871', label: 9 },
   'STAR/福/🇫🇷': { cal: '86075789', label: 10 }
 };
-// ★COSMOSは常に最後（部屋移動の候補ボタン＝一番右／空き部屋状況パネル＝一番下）＝ユーザー指定の並び。
-var ROOM_ORDER_ = ['FREEDOM', 'HAPPY', 'LUCKY', 'STAR/福/🇫🇷', 'COSMOS'];
+// ★COSMOSは部屋移動の候補ボタン・空き部屋状況パネルに出さない（ユーザー指定の恒久ルール）。
+//   COSMOSは新規カウンセリング専用の部屋で、施術室被りの移動先候補にはならないため。
+//   ROOMS_（カレンダー/ラベルの対応表）自体はCOSMOSを残す（他機能が参照する可能性への配慮）。
+var ROOM_ORDER_ = ['FREEDOM', 'HAPPY', 'LUCKY', 'STAR/福/🇫🇷'];
 
 // 'HH:MM' → 分。ダメなら null。
 function hmToMin_(s) {
@@ -1502,7 +1504,8 @@ var CSS_ =
 '  .rstat { display:flex; align-items:flex-start; flex-wrap:nowrap; gap:6px; padding:4px 0; }' +
 '  .rstat + .rstat { border-top:1px dashed var(--line); }' +
 '  .rstat .room { flex:0 0 auto; }' +
-'  .rchips { flex:1 1 auto; min-width:0; display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; }' +
+'  .rchips { flex:1 1 auto; min-width:0; display:grid;' +
+'    grid-template-columns:repeat(2,minmax(0,1fr)); justify-items:start; gap:5px; }' +
 '  .rchips .slot { display:inline-block; background:var(--card); border:1px solid var(--line);' +
 '    border-radius:7px; padding:2px 8px; font-size:.82rem; font-variant-numeric:tabular-nums; }' +
 '  .rchips .none { color:var(--real); font-size:.82rem; font-weight:700; }' +
