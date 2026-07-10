@@ -19,8 +19,8 @@
      ★?v=... はキャッシュ避け（GitHub PagesがCache-Control: max-age=600を付けるため、
      コード更新のたびにここの番号を上げないとスマホが古いJSを最大10分キャッシュし続ける）。
      更新手順：code.js/detect_core.jsを直したら、この2行の?v=も必ず同じ値へ上げてからpushする。 -->
-<script src="detect_core.js?v=20260710q"></script>
-<script src="code.js?v=20260710q"></script>
+<script src="detect_core.js?v=20260710r"></script>
+<script src="code.js?v=20260710r"></script>
 <script>
 (function () {
   // 施術室被りデータは公開リポジトリに置かず、GASからJSONPで取得する
@@ -106,6 +106,19 @@
     document.body.appendChild(s);
   }
 
+  function showUnanswered() {
+    window.__ttUnanswered = function (payload) {
+      try {
+        if (!payload || payload.error) { mount(renderUnansweredError_((payload && payload.error) || '不明', base, staff, dev)); return; }
+        mount(renderUnansweredPage_(payload, base, staff, dev));
+      } catch (e) { fail('描画エラー：' + e); }
+    };
+    var s = document.createElement('script');
+    s.src = EXEC + '?action=unanswered&callback=__ttUnanswered&cb=' + Date.now();
+    s.onerror = function () { fail('データに接続できませんでした。通信環境をご確認ください。'); };
+    document.body.appendChild(s);
+  }
+
   // ホーム画面のボタン表示ON/OFF設定（幹部用／スタッフ用）もJSONPで取得。
   // renderHome_（DriveApp使用）は①専用なので、②はrenderHomePage_を直接呼ぶ
   // （取得失敗時はtileSettings未指定＝renderHomePage_内のデフォルトにフォールバック）。
@@ -124,6 +137,8 @@
     showLt();
   } else if (view === 'uriage' && !staff) {
     showUriage();
+  } else if (view === 'unanswered') {
+    showUnanswered();
   } else if (view === 'conflict') {
     showConflict();
   } else {

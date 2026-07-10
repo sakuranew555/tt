@@ -43,9 +43,22 @@ function doGet(e) {
   } else if (view === 'lt') {
     title = 'L⇔T予約照合';
     html = renderLT_(base, staff, dev);
+  } else if (view === 'notice') {
+    title = '前日お知らせ 確認';
+    try {
+      var nfile = getNoticeFile_();
+      var nd = JSON.parse(nfile.getBlob().getDataAsString('UTF-8'));
+      title = nd.title || title;
+      html = nd.body_html;
+    } catch (nerr) {
+      html = renderError_(nerr, base, staff, dev);
+    }
   } else if (view === 'uriage' && !staff) {
     title = '売上TimeTree転記';
     html = renderUriage_(base, staff, dev);
+  } else if (view === 'unanswered') {
+    title = 'LINE未回答＆返信待ち';
+    html = renderUnanswered_(base, staff, dev);
   } else {
     title = staff ? 'TTスーパーズコApp（ALLスタッフ版）' : (dev ? 'TTスーパーズコApp（開発版）' : 'TTスーパーズコApp');
     html = renderHome_(base, staff, dev);
@@ -116,6 +129,19 @@ function _uriageJsonp_(p) {
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
+// unanswered.json のJSONP配信（読み取り専用・鍵不要）。事務所PCが export_unanswered_super.py で書き出す。
+function _unansweredJsonp_(p) {
+  var cb = String(p.callback || 'cb').replace(/[^A-Za-z0-9_$.]/g, '');
+  var payload;
+  try {
+    payload = JSON.parse(getUnansweredFile_().getBlob().getDataAsString('UTF-8'));
+  } catch (e) {
+    payload = { error: String(e) };
+  }
+  return ContentService.createTextOutput(cb + '(' + JSON.stringify(payload) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
 // タイル(ボタン)表示ON/OFF設定のJSONP配信（読み取り専用・鍵不要）。
 // 事務所PC「自動監視システム」の tile_settings.py が書き出す tile_settings.json を渡すだけ。
 function _tileSettingsJsonp_(p) {
@@ -129,6 +155,7 @@ function handleAction_(p) {
   if (p.action === 'events') return _eventsJsonp_(p);
   if (p.action === 'lt') return _ltJsonp_(p);
   if (p.action === 'uriage') return _uriageJsonp_(p);
+  if (p.action === 'unanswered') return _unansweredJsonp_(p);
   if (p.action === 'tilesettings') return _tileSettingsJsonp_(p);
   if (p.key !== EDIT_KEY) return _jsonOut_({ ok: false, error: 'bad key' });
   var lock = LockService.getScriptLock();
@@ -257,6 +284,22 @@ function getEventsFile_() {
   return newest;
 }
 
+/** notice_compare.json のファイルを取得（前日お知らせ比較ページ。IDキャッシュはしない＝
+ *  上書きのたびに毎回名前検索して最新を拾う。ファイル自体が小さく低頻度アクセスのため軽い）。 */
+var NOTICE_FILENAME = 'notice_compare.json';
+function getNoticeFile_() {
+  var it = DriveApp.getFilesByName(NOTICE_FILENAME);
+  var newest = null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!newest || f.getLastUpdated() > newest.getLastUpdated()) newest = f;
+  }
+  if (!newest) {
+    throw new Error('notice_compare.json がドライブに見つかりません。事務所PCから書き出してください。');
+  }
+  return newest;
+}
+
 /** lt_match.json のファイルを取得（L⇔T照合の結果。事務所PCが export_lt_super.py で書き出す）。 */
 var LT_FILENAME = 'lt_match.json';
 function getLtFile_() {
@@ -299,6 +342,28 @@ function getUriageFile_() {
   return newest;
 }
 
+/** unanswered.json のファイルを取得（LINE未回答＆返信待ち表示。
+ *  事務所PCが export_unanswered_super.py で書き出す）。 */
+var UNANSWERED_FILENAME = 'unanswered.json';
+function getUnansweredFile_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('UNANSWERED_FILE_ID');
+  if (id) {
+    try { return DriveApp.getFileById(id); } catch (ignore) { /* IDが古い→探し直す */ }
+  }
+  var it = DriveApp.getFilesByName(UNANSWERED_FILENAME);
+  var newest = null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!newest || f.getLastUpdated() > newest.getLastUpdated()) newest = f;
+  }
+  if (!newest) {
+    throw new Error('unanswered.json がドライブに見つかりません。事務所PCで export_unanswered_super.py を実行し、Googleドライブの同期を待ってください。');
+  }
+  props.setProperty('UNANSWERED_FILE_ID', newest.getId());
+  return newest;
+}
+
 /** tile_settings.json のファイルを取得（ホーム画面ボタンの表示ON/OFF設定。
  *  事務所PC「自動監視システム」の tile_settings.py が書き出す）。 */
 var TILE_SETTINGS_FILENAME = 'tile_settings.json';
@@ -322,9 +387,10 @@ function getTileSettingsFile_() {
 // tile_settings.json が無い/壊れている時のデフォルト＝現状の挙動と同じ（売上だけスタッフに非表示）。
 // ★新しいボタン(タイル)を足す時は、下のTILE_DEFS_と両方に1件ずつ追記する（idを一致させる）。
 var DEFAULT_TILE_SETTINGS_ = {
-  conflict: { exec: true, staff: true },
-  lt:       { exec: true, staff: true },
-  uriage:   { exec: true, staff: false }
+  conflict:   { exec: true, staff: true },
+  lt:         { exec: true, staff: true },
+  uriage:     { exec: true, staff: false },
+  unanswered: { exec: true, staff: true }
 };
 
 /** 現在のタイル表示設定を取得（①GAS専用＝DriveApp呼び出し。失敗時はデフォルトにフォールバック
@@ -585,7 +651,9 @@ var TILE_DEFS_ = [
   { id: 'lt', cls: 'lt', view: 'lt',
     icon: '<span class="ticon"><span class="lt2">' + LINE_LOGO_ + TT_LOGO_ + '</span></span>', label: 'L⇔T予約照合' },
   { id: 'uriage', cls: 'uriage', view: 'uriage',
-    icon: '<span class="ticon">💰</span>', label: '売上TimeTree転記' }
+    icon: '<span class="ticon">💰</span>', label: '売上TimeTree転記' },
+  { id: 'unanswered', cls: 'unanswered', view: 'unanswered',
+    icon: '<span class="ticon">💬</span>', label: 'LINE未回答＆返信待ち' }
 ];
 
 /** ①GAS直アクセス専用のホーム画面ラッパ。tile_settings.json(Drive)を読んで renderHomePage_ に渡すだけ。 */
@@ -936,6 +1004,165 @@ var URIAGECSS_ =
 '  .upertbl .num { text-align:right; font-variant-numeric:tabular-nums; }' +
 '  .ugen { text-align:center; color:rgba(255,255,255,.9); font-size:.78rem; margin-top:14px; }';
 
+/** LINE未回答＆返信待ち（GAS(/exec)からの直アクセス用ラッパ）：
+ *  事務所PCが export_unanswered_super.py で書き出した unanswered.json を DriveApp で読んで
+ *  renderUnansweredPage_ に渡す。判定はPC側(line_unanswered.py/build_web.py)で完結済み・GASは表示のみ。
+ *  ※静的アプリはJSONP経由でrenderUnansweredPage_を直接呼ぶ（他のview同様）。 */
+function renderUnanswered_(base, staff, dev) {
+  try {
+    var d = JSON.parse(getUnansweredFile_().getBlob().getDataAsString('UTF-8'));
+    return renderUnansweredPage_(d, base, staff, dev);
+  } catch (err) {
+    return renderUnansweredError_(err, base, staff, dev);
+  }
+}
+
+function renderUnansweredError_(err, base, staff, dev) {
+  return '<style>' + HOMECSS_ + '</style>' +
+  '<div class="home">' +
+    '<div class="ubar"><a class="uhome" href="' + (base || '') + '?view=home' +
+      roleSfx_(staff, dev) + '" target="_top">← 前に戻る</a></div>' +
+    '<div class="hhead"><span class="bmark">💬</span><span class="bname">LINE未回答＆返信待ち</span></div>' +
+    '<div class="soon">' +
+      '<div class="soonic">📄</div>' +
+      '<div class="soontitle" style="font-size:1.4rem">データ未生成</div>' +
+      '<div class="soondesc">' + esc_(err && err.message ? err.message : err) + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function unaBadge_(kind, v) {
+  if (kind === 'cust') return '<span class="unabadge cust">客の質問</span>';
+  if (v === '要返信・依頼') return '<span class="unabadge req">要返信・依頼</span>';
+  return '<span class="unabadge q">個別質問</span>';
+}
+function unaReadPill_(read) {
+  if (read === '未読') return '<span class="unapill unread">未読</span>';
+  if (read === '既読') return '<span class="unapill read">既読</span>';
+  return '';
+}
+
+// 1件のカード（build_web.py の row描画のGAS/静的アプリ版。全文モーダルは今回省略＝リンク先LINEで確認）。
+function unaCard_(r, kind) {
+  var name = r.nm || '🆕 新規（番号未設定）';
+  var tag = [r.nat, r.sex].filter(Boolean).join('・');
+  var search = esc_(((name) + ' ' + (r.q || '')).toLowerCase());
+  var link = r.url
+    ? '<a class="unalink" target="_blank" rel="noopener" href="' + esc_(r.url) + '">💬 LINEを開く（返信する）</a>'
+    : '';
+  return '' +
+  '<article class="unacard ' + (kind === 'cust' ? 'cust' : 'ours') + '" data-search="' + search + '">' +
+    '<div class="unahead">' +
+      unaBadge_(kind, r.v) + unaReadPill_(r.read) +
+      '<span class="unaname">' + esc_(name) + '</span>' +
+      (tag ? '<span class="unatag">' + esc_(tag) + '</span>' : '') +
+      '<span class="unadays">待ち' + (r.d || 0) + '日</span>' +
+    '</div>' +
+    '<div class="unaq">' + esc_(r.q || '') + '</div>' +
+    (r.th ? '<div class="unath">' + esc_(r.th) + '</div>' : '') +
+    (link ? '<div class="unaactions">' + link + '</div>' : '') +
+  '</article>';
+}
+
+/** LINE未回答＆返信待ちページの描画（純JS・GAS API不使用）。GAS直アクセスと静的アプリJSONPの
+ *  両方から呼ばれる（他view同様「取得と描画を分離」の作法）。
+ *  cust=客の質問に店が未返信（最優先）／ ours=こちらの質問・依頼に客が未回答。 */
+function renderUnansweredPage_(d, base, staff, dev) {
+  var cust = d.cust || [], ours = d.ours || [];
+  var custCards = cust.length
+    ? cust.map(function (r) { return unaCard_(r, 'cust'); }).join('\n')
+    : '<div class="unaempty">当店が未返信の会話はありません 🎉</div>';
+  var oursCards = ours.length
+    ? ours.map(function (r) { return unaCard_(r, 'ours'); }).join('\n')
+    : '<div class="unaempty">お客様の返事待ちはありません 🎉</div>';
+
+  return '' +
+'<style>' + UNACSS_ + '</style>' +
+'<div class="unawrap">' +
+  '<div class="unabar">' +
+    '<a class="unahome" href="' + (base || '') + '?view=home' + roleSfx_(staff, dev) + '" target="_top">← 前に戻る</a>' +
+    '<span class="unagen">' + esc_(d.fresh || '—') + ' 時点</span>' +
+  '</div>' +
+  '<h1>💬 LINE未回答＆返信待ち</h1>' +
+  '<div class="unatabs">' +
+    '<button type="button" class="unatab cust sel" data-v="cust">🟢 当店が未返信<span class="unac">' + cust.length + '</span></button>' +
+    '<button type="button" class="unatab ours" data-v="ours">🔵 お客様の返事待ち<span class="unac">' + ours.length + '</span></button>' +
+  '</div>' +
+  '<input id="unaq" type="search" placeholder="名前・質問内容でしぼり込み">' +
+  '<div id="unacust" class="unalist">' + custCards + '</div>' +
+  '<div id="unaours" class="unalist unahidden">' + oursCards + '</div>' +
+  '<div class="unafoot">緑＝こちらが返すべき（お客様が待っている）／ 青＝お客様の返事待ち。' +
+    'アフターケア確認・一斉あいさつ等の返事不要な定型は除外済み。既読/未読はLINE公式マネージャー基準。</div>' +
+'</div>' +
+UNASCRIPT_;
+}
+
+// タブ切替（客の質問⇔客の返事待ち）＋名前・質問文でのしぼり込み（L⇔T照合の絞り込みと同じ発想）。
+var UNASCRIPT_ =
+'<script>(function(){' +
+'var tabs=[].slice.call(document.querySelectorAll(".unatab"));' +
+'var custEl=document.getElementById("unacust"), oursEl=document.getElementById("unaours");' +
+'var q=document.getElementById("unaq");' +
+'function apply(){' +
+'  var kw=(q&&q.value||"").trim().toLowerCase();' +
+'  [].slice.call(document.querySelectorAll(".unacard")).forEach(function(c){' +
+'    var okK=(!kw||(c.getAttribute("data-search")||"").indexOf(kw)>=0);' +
+'    c.classList.toggle("unahide", !okK);' +
+'  });' +
+'}' +
+'tabs.forEach(function(t){ t.addEventListener("click",function(){' +
+'  var v=t.getAttribute("data-v");' +
+'  tabs.forEach(function(x){ x.classList.toggle("sel", x===t); });' +
+'  if(custEl) custEl.classList.toggle("unahidden", v!=="cust");' +
+'  if(oursEl) oursEl.classList.toggle("unahidden", v!=="ours");' +
+'}); });' +
+'if(q) q.addEventListener("input",apply);' +
+'})();</scr' + 'ipt>';
+
+// LINE未回答＆返信待ちページ用スタイル（自己完結・ダーク/ライト対応・スマホ第一。L⇔T照合のCSSを土台にする）。
+var UNACSS_ =
+'  :root{ --bg:#2C7A99; --card:#ffffff; --ink:#1c2430; --sub:#667085; --line:#e6e9ef;' +
+'    --cust:#0d9b6c; --req:#e5484d; --q:#4f57c4; --custbg:#e7f6ec; }' +
+'  @media (prefers-color-scheme:dark){ :root{ --card:#1b2430; --ink:#e8ebf0; --sub:#9aa4b2;' +
+'    --line:#2a3441; --custbg:#12331f; } }' +
+'  *{ box-sizing:border-box; }' +
+'  body{ margin:0; background:var(--bg); color:var(--ink);' +
+'    font-family:"Segoe UI","Yu Gothic UI","Hiragino Sans",system-ui,sans-serif; line-height:1.5; }' +
+'  .unawrap{ max-width:640px; margin:0 auto; padding:16px 14px 60px; }' +
+'  .unabar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }' +
+'  .unahome{ color:#fff; text-decoration:none; font-weight:700; font-size:14px;' +
+'    background:rgba(255,255,255,.16); padding:7px 12px; border-radius:10px; }' +
+'  .unagen{ color:#eaf3f7; font-size:11px; opacity:.9; }' +
+'  h1{ color:#fff; font-size:19px; margin:6px 0 12px; }' +
+'  .unatabs{ display:flex; gap:8px; margin-bottom:12px; }' +
+'  .unatab{ flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px;' +
+'    padding:10px 8px; cursor:pointer; text-align:center; color:var(--ink); font:inherit; font-weight:700; font-size:13px; }' +
+'  .unatab .unac{ display:block; font-size:20px; font-weight:900; margin-top:2px; }' +
+'  .unatab.cust.sel{ outline:2px solid var(--cust); } .unatab.ours.sel{ outline:2px solid var(--q); }' +
+'  #unaq{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;' +
+'    background:var(--card); color:var(--ink); font-size:15px; margin-bottom:14px; }' +
+'  .unahidden{ display:none!important; } .unahide{ display:none!important; }' +
+'  .unalist{ display:flex; flex-direction:column; gap:10px; }' +
+'  .unacard{ background:var(--card); border:1px solid var(--line); border-left:6px solid var(--sub);' +
+'    border-radius:12px; padding:12px 14px; }' +
+'  .unacard.cust{ border-left-color:var(--cust); background:var(--custbg); }' +
+'  .unacard.ours{ border-left-color:var(--q); }' +
+'  .unahead{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }' +
+'  .unabadge{ font-size:11px; font-weight:800; color:#fff; padding:2px 9px; border-radius:999px; }' +
+'  .unabadge.cust{ background:var(--cust); } .unabadge.req{ background:var(--req); } .unabadge.q{ background:var(--q); }' +
+'  .unapill{ font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:6px; }' +
+'  .unapill.unread{ background:#fef9c3; color:#854d0e; } .unapill.read{ background:var(--line); color:var(--sub); }' +
+'  .unaname{ font-weight:800; font-size:15px; }' +
+'  .unatag{ font-size:11px; color:var(--sub); }' +
+'  .unadays{ margin-left:auto; font-size:12px; color:var(--sub); font-variant-numeric:tabular-nums; }' +
+'  .unaq{ font-size:14px; margin:2px 0 6px; line-height:1.45; }' +
+'  .unath{ font-size:12px; color:var(--sub); border-top:1px dashed var(--line); padding-top:6px; margin-top:2px; }' +
+'  .unaactions{ margin-top:9px; }' +
+'  .unalink{ display:inline-block; text-decoration:none; background:#06c755; color:#fff; font-weight:700;' +
+'    font-size:12.5px; padding:8px 14px; border-radius:10px; }' +
+'  .unaempty{ text-align:center; color:#fff; padding:30px; font-weight:700; }' +
+'  .unafoot{ margin-top:18px; color:rgba(255,255,255,.85); font-size:11px; line-height:1.6; }';
+
 // Androidは intent:// でTimeTreeアプリを直接起動（LINE内ブラウザからでも開く）。
 // iOSは https のユニバーサルリンクのまま（Safariで開けばアプリに渡る）。
 var TTSCRIPT_ =
@@ -1114,6 +1341,7 @@ var HOMECSS_ =
 '  .tile.conflict::before { background:#e11d48; }' +
 '  .tile.lt::before { background:#6366f1; }' +
 '  .tile.uriage::before { background:#f59e0b; }' +
+'  .tile.unanswered::before { background:#0d9b6c; }' +
 '  .tile:active { transform:translateY(2px); box-shadow:0 3px 10px rgba(0,0,0,.10); }' +
 '  @media (hover:hover){ .tile:hover { transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.12); } }' +
 '  .ticon { flex:none; width:60px; height:60px; border-radius:15px; font-size:32px;' +
@@ -1121,6 +1349,7 @@ var HOMECSS_ =
 '  .tile.conflict .ticon { background:rgba(225,29,72,.12); }' +
 '  .tile.lt .ticon { background:rgba(148,163,184,.14); }' +
 '  .tile.uriage .ticon { background:rgba(245,158,11,.16); }' +
+'  .tile.unanswered .ticon { background:rgba(13,155,108,.12); }' +
 '  .lt2 { display:inline-flex; align-items:center; gap:3px; }' +
 '  .tname { flex:1; min-width:0; font-size:1.5rem; font-weight:800; white-space:normal;' +
 '    display:flex; flex-wrap:wrap; align-items:center; gap:6px; }' +
