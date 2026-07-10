@@ -580,13 +580,20 @@ function renderUriage_(base, staff) {
   }
 }
 
+// 「前に戻る」共通の土台（★ルール：戻るリンクは全画面この方式に統一＝施術室被り(.homelink)と
+// 同じ「← 前に戻る」の上部バー。新しいviewを足す時もこれを使う。共通\スーパーズコApp_必読.md参照）。
+function backBar_(base, staff) {
+  return '<div class="ubar"><a class="uhome" href="' + (base || '') + '?view=home' +
+    (staff ? '&staff=1' : '') + '" target="_top">← 前に戻る</a></div>';
+}
+
 /** 売上ページの描画（純JS・GAS API不使用）。GAS直アクセスと静的アプリJSONPの両方から呼ばれる。 */
 function renderUriagePage_(d, base, staff) {
   return '<style>' + HOMECSS_ + URIAGECSS_ + '</style>' +
   '<div class="home">' +
+    backBar_(base, staff) +
     '<div class="hhead"><span class="bmark">💰</span><span class="bname">売上TimeTree転記</span></div>' +
     uriageBody_(d) +
-    '<a class="backbtn" href="' + base + '?view=home" target="_top">☰ メニューにもどる</a>' +
   '</div>' +
   URIAGESCRIPT_;
 }
@@ -595,13 +602,13 @@ function renderUriagePage_(d, base, staff) {
 function renderUriageError_(err, base, staff) {
   return '<style>' + HOMECSS_ + '</style>' +
   '<div class="home">' +
+    backBar_(base, staff) +
     '<div class="hhead"><span class="bmark">💰</span><span class="bname">売上TimeTree転記</span></div>' +
     '<div class="soon">' +
       '<div class="soonic">📄</div>' +
       '<div class="soontitle" style="font-size:1.4rem">データ未生成</div>' +
       '<div class="soondesc">' + esc_(err && err.message ? err.message : err) + '</div>' +
     '</div>' +
-    '<a class="backbtn" href="' + base + '?view=home" target="_top">☰ メニューにもどる</a>' +
   '</div>';
 }
 
@@ -634,6 +641,11 @@ function uriageBody_(d) {
     '<div class="ucard"><div class="ul">今日の売上</div><div class="uv">' + esc_(today) + '</div></div>' +
     '<div class="ucard"><div class="ul">' + esc_(monthLabel) + '</div><div class="uv">' + esc_(cum) + '</div></div>' +
   '</div>' +
+  '<button type="button" id="uperbtn" class="uperbtn">📅 各営業日の売上</button>' +
+  '<div id="uperpanel" class="uperpanel" hidden>' +
+    '<table class="upertbl"><thead><tr><th>日</th><th class="num">売上(元)</th></tr></thead>' +
+    '<tbody>' + perRows + '</tbody></table>' +
+  '</div>' +
   '<div class="uplan">' +
     '<div class="uprow">' +
       '<span class="upc"><b class="cr">' + nMissing + '</b><span>未記入</span></span>' +
@@ -645,10 +657,6 @@ function uriageBody_(d) {
   '</div>' +
   '<button type="button" id="ubtn" class="ubtn"' + (nMissing > 0 ? '' : ' data-empty="1"') + '>' + btnLabel + '</button>' +
   '<div id="ustatus" class="ustatus" hidden></div>' +
-  '<details class="uper"><summary>各営業日の内訳を見る</summary>' +
-    '<table class="upertbl"><thead><tr><th>日</th><th class="num">売上(元)</th></tr></thead>' +
-    '<tbody>' + perRows + '</tbody></table>' +
-  '</details>' +
   '<div class="ugen">最終計算：' + esc_(d.generated_at || '—') + '</div>';
 }
 
@@ -665,6 +673,10 @@ var URIAGESCRIPT_ =
 '    el.style.fontSize=(cur-1)+"px"; tries++;' +
 '  }' +
 '}' +
+'var pb=document.getElementById("uperbtn");' +
+'if(pb){ pb.addEventListener("click",function(){' +
+'  var pn=document.getElementById("uperpanel"); if(pn) pn.hidden=!pn.hidden;' +
+'}); }' +
 'var b=document.getElementById("ubtn"); if(!b) return;' +
 'var st=document.getElementById("ustatus");' +
 'b.addEventListener("click",function(){' +
@@ -692,6 +704,10 @@ var URIAGESCRIPT_ =
 '})();</scr' + 'ipt>';
 
 var URIAGECSS_ =
+'  .ubar { display:flex; align-items:center; gap:12px; margin:0 0 14px; }' +
+'  .uhome { font-size:.9rem; font-weight:700; color:var(--ink); text-decoration:none;' +
+'    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }' +
+'  .uhome:active { transform:translateY(1px); }' +
 '  .unote { background:#fef9c3; color:#854d0e; border-radius:12px; padding:12px 14px;' +
 '    font-weight:700; font-size:.9rem; margin-bottom:14px; }' +
 '  .ucards { display:flex; gap:12px; margin-bottom:14px; }' +
@@ -722,9 +738,12 @@ var URIAGECSS_ =
 '  .ustatus.working { background:#fef9c3; color:#854d0e; }' +
 '  .ustatus.ok { background:#dcfce7; color:#166534; }' +
 '  .ustatus.err { background:#fee2e2; color:#991b1b; }' +
-'  .uper { margin-top:14px; background:var(--card); border:1px solid var(--line);' +
-'    border-radius:12px; padding:6px 14px; }' +
-'  .uper summary { cursor:pointer; font-weight:700; font-size:.9rem; padding:8px 0; color:var(--ink); }' +
+'  .uperbtn { width:100%; text-align:center; font-size:.9rem; font-weight:700; color:var(--ink);' +
+'    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px;' +
+'    cursor:pointer; margin-bottom:14px; }' +
+'  .uperbtn:active { transform:translateY(1px); }' +
+'  .uperpanel { background:var(--card); border:1px solid var(--line); border-radius:12px;' +
+'    padding:4px 14px; margin:-8px 0 14px; }' +
 '  .upertbl { width:100%; border-collapse:collapse; margin:6px 0 10px; font-size:.92rem; }' +
 '  .upertbl th, .upertbl td { border-bottom:1px solid var(--line); padding:7px 8px; text-align:left; }' +
 '  .upertbl .num { text-align:right; font-variant-numeric:tabular-nums; }' +
@@ -923,11 +942,7 @@ var HOMECSS_ =
 '    padding:44px 22px; text-align:center; box-shadow:0 6px 18px rgba(0,0,0,.07); }' +
 '  .soonic { font-size:60px; margin-bottom:12px; }' +
 '  .soontitle { font-size:2.2rem; font-weight:900; color:#f97316; letter-spacing:.03em; }' +
-'  .soondesc { color:var(--sub); font-size:.9rem; margin-top:8px; line-height:1.6; }' +
-'  .backbtn { display:block; margin-top:20px; text-align:center; text-decoration:none;' +
-'    font-weight:700; color:var(--ink); background:var(--card); border:1px solid var(--line);' +
-'    border-radius:12px; padding:14px; }' +
-'  .backbtn:active { transform:translateY(1px); }';
+'  .soondesc { color:var(--sub); font-size:.9rem; margin-top:8px; line-height:1.6; }';
 
 var CSS_ =
 '  :root { --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --sub:#64748b;' +
