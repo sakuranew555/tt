@@ -1153,7 +1153,7 @@ var CSS_ =
 '    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }' +
 '  .homelink:active { transform:translateY(1px); }' +
 '  h1 { font-size:1.05rem; margin:4px 0 8px; color:#fff; }' +
-'  h1 .cnt { color:#ff8fb3; }' +
+'  h1 .cnt { color:#ff8fb3; font-size:1.6em; font-weight:900; }' +
 '  .meta { color:var(--sub); font-size:.82rem; line-height:1.6; margin-bottom:6px; }' +
 '  .safe { display:inline-block; font-size:.75rem; color:#16a34a;' +
 '    border:1px solid #16a34a55; border-radius:999px; padding:2px 10px; margin-bottom:16px; }' +
@@ -1168,7 +1168,6 @@ var CSS_ =
 '  .stat.real .n { color:var(--real); } .stat.dup .n { color:var(--dup); }' +
 '  .card { background:var(--card); border:1px solid var(--line); box-sizing:border-box;' +
 '    border-left:4px solid var(--real); border-radius:12px; padding:9px 11px;' +
-'    min-height:90vh; min-height:90svh;' +
 '    margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.06); }' +
 '  .card.dup { border-left-color:var(--dup); }' +
 '  .card-h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }' +
