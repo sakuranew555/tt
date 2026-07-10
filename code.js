@@ -412,7 +412,7 @@ function moveRow_(side, cal, event, who, title, curRoom, roomBusyForDate, timeSt
   var note = !hasId ? '<span class="mvng">IDが取れず移動不可</span>'
     : (!anyFree ? '<span class="mvng">その時間、空いている部屋がありません</span>' : '');
   return '<div class="mvrow">' +
-    '<span class="mvlabel">' + side + '（' + esc_(who) + '）を→</span>' +
+    '<span class="mvlabel">' + side + '（' + esc_(who) + '）を以下の部屋に移す</span>' +
     '<span class="mvbtns">' + btns + note + '</span>' +
   '</div>';
 }
@@ -523,9 +523,9 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff, dev) {
           '</div>' +
           roomStatusPanel_(x.date, roomBusyForDate) +
           '<div class="mvpanel" hidden>' +
-            moveRow_('A', x.a_cal_id, x.a_event_id, (x.a_staff || '') + ' ' + (x.a_name || ''), x.a_title, x.room, roomBusyForDate, x.a_time) +
-            moveRow_('B', x.b_cal_id, x.b_event_id, (x.b_staff || '') + ' ' + (x.b_name || ''), x.b_title, x.room, roomBusyForDate, x.b_time) +
-            '<div class="mvhint">選ぶとTimeTreeを書き換えます（削除はしません）。</div>' +
+            moveRow_('A', x.a_cal_id, x.a_event_id, [x.a_staff, x.a_code, x.a_name].filter(Boolean).join(' '), x.a_title, x.room, roomBusyForDate, x.a_time) +
+            moveRow_('B', x.b_cal_id, x.b_event_id, [x.b_staff, x.b_code, x.b_name].filter(Boolean).join(' '), x.b_title, x.room, roomBusyForDate, x.b_time) +
+            '<div class="mvhint">空いている施術室のみ表示しています</div>' +
           '</div>' +
           '<div class="mvstatus" hidden></div>' +
         '</div>' +
@@ -1225,7 +1225,7 @@ var CSS_ =
 '  .mvbtn:active { transform:translateY(1px); }' +
 '  .mvbtn:disabled { opacity:.4; }' +
 '  .mvng { font-size:.8rem; color:var(--sub); align-self:center; }' +
-'  .mvhint { font-size:.74rem; color:var(--sub); margin-top:6px; line-height:1.5; }' +
+'  .mvhint { font-size:.86rem; color:var(--real); font-weight:800; margin-top:6px; line-height:1.5; }' +
 '  .mvstatus { margin-top:8px; padding:11px 12px; border-radius:10px; font-size:.95rem; font-weight:700; }' +
 '  .mvstatus.working { background:#fef9c3; color:#854d0e; }' +
 '  .mvstatus.ok { background:#dcfce7; color:#166534; }' +
