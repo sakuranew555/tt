@@ -1168,6 +1168,7 @@ var CSS_ =
 '  .stat.real .n { color:var(--real); } .stat.dup .n { color:var(--dup); }' +
 '  .card { background:var(--card); border:1px solid var(--line); box-sizing:border-box;' +
 '    border-left:4px solid var(--real); border-radius:12px; padding:9px 11px;' +
+'    min-height:90vh; min-height:90svh;' +
 '    margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.06); }' +
 '  .card.dup { border-left-color:var(--dup); }' +
 '  .card-h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }' +
