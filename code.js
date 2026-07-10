@@ -1079,11 +1079,11 @@ var CSS_ =
 '    margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.06); }' +
 '  .card.dup { border-left-color:var(--dup); }' +
 '  .card-h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }' +
-'  .no { width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--card);' +
-'    display:grid; place-items:center; font-size:.85rem; font-weight:700; flex:none; }' +
-'  .date { font-weight:800; font-size:1.15rem; }' +
-'  .room { background:var(--rc); color:#fff; font-weight:700; font-size:.85rem;' +
-'    padding:2px 11px; border-radius:999px; }' +
+'  .no { width:34px; height:34px; border-radius:50%; background:var(--ink); color:var(--card);' +
+'    display:grid; place-items:center; font-size:1.1rem; font-weight:800; flex:none; }' +
+'  .date { font-weight:900; font-size:1.55rem; }' +
+'  .room { background:var(--rc); color:#fff; font-weight:800; font-size:1.05rem;' +
+'    padding:4px 16px; border-radius:999px; }' +
 '  .kind { font-size:.82rem; font-weight:600; }' +
 '  .card.real .kind { color:var(--real); } .card.dup .kind { color:var(--dup); }' +
 '  .ov { font-size:1.05rem; font-weight:800; color:var(--real);' +
@@ -1095,7 +1095,7 @@ var CSS_ =
 '    font-variant-numeric:tabular-nums; }' +
 '  .ab { flex:none; display:grid; place-items:center; width:34px; height:34px; border-radius:9px;' +
 '    color:#fff; font-weight:800; font-size:1.15rem; margin-right:8px; }' +
-'  .abA { background:#2563eb; } .abB { background:#475569; }' +
+'  .abA { background:#2563eb; } .abB { background:#0d9488; }' +
 '  .who { margin:4px 0 2px; font-size:1rem; }' +
 '  .who .staff { font-size:1.02rem; } .who .code { color:var(--sub); font-weight:600; margin:0 4px; }' +
 '  .who .name { font-weight:500; }' +
