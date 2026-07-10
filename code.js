@@ -416,18 +416,48 @@ function moveRow_(side, cal, event, who, title, curRoom, roomBusyForDate, timeSt
   '</div>';
 }
 
-// 「空き部屋状況を見る」パネル：その日1日の施術室別・使用中時間（NAIL除外）。
+// 表示用の営業窓（スタッフ確定シフトの最早11:00〜最遅21:00に合わせた既定値。
+// 空き時間検索システム(available_slots.py)のSTAFFシフト定義と同じ範囲＝表示の目安。
+var DAY_WIN_S_ = 11 * 60, DAY_WIN_E_ = 21 * 60;
+
+// busy区間（分, ソート済み前提なしでOK）から、[winS,winE) の中の空き区間を計算。
+function freeGaps_(busy, winS, winE) {
+  var merged = (busy || []).slice().sort(function (a, b) { return a[0] - b[0]; })
+    .reduce(function (acc, iv) {
+      var s = Math.max(winS, iv[0]), e = Math.min(winE, iv[1]);
+      if (e <= s) return acc;
+      if (acc.length && s <= acc[acc.length - 1][1]) {
+        acc[acc.length - 1][1] = Math.max(acc[acc.length - 1][1], e);
+      } else {
+        acc.push([s, e]);
+      }
+      return acc;
+    }, []);
+  var gaps = [], cur = winS;
+  merged.forEach(function (iv) {
+    if (iv[0] > cur) gaps.push([cur, iv[0]]);
+    cur = Math.max(cur, iv[1]);
+  });
+  if (winE > cur) gaps.push([cur, winE]);
+  return gaps;
+}
+
+// 「空き部屋状況を見る」パネル：その日1日の施術室別・空き時間（NAIL除外）。
+// ★空きの元データ(busy)はPC側がroom_availabilityモジュールで計算した答え（room_busy）そのまま。
+//   ここでやっているのは「営業窓からbusyを引いた残り」を出すだけの表示計算（判定ロジックの
+//   再実装ではない）。
 function roomStatusPanel_(date, roomBusyForDate) {
   var rows = ROOM_ORDER_.map(function (name) {
-    var ivs = (roomBusyForDate && roomBusyForDate[name]) || [];
-    var chips = ivs.length
-      ? ivs.slice().sort(function (a, b) { return a[0] - b[0]; })
-          .map(function (iv) { return '<span class="slot">' + toHm_(iv[0]) + '-' + toHm_(iv[1]) + '</span>'; }).join('')
-      : '<span class="none">空き（予約なし）</span>';
+    var busy = (roomBusyForDate && roomBusyForDate[name]) || [];
+    var gaps = freeGaps_(busy, DAY_WIN_S_, DAY_WIN_E_);
+    var chips = gaps.length
+      ? gaps.map(function (iv) { return '<span class="slot">' + toHm_(iv[0]) + '-' + toHm_(iv[1]) + '</span>'; }).join('')
+      : '<span class="none">空きなし</span>';
     return '<div class="rstat"><span class="room" style="--rc:' + roomColor_(name) + '">' +
       esc_(name) + '</span><span class="rchips">' + chips + '</span></div>';
   }).join('');
-  return '<div class="rspanel" hidden><div class="rstitle">' + esc_(date) + ' の施術室別・使用中時間</div>' + rows + '</div>';
+  return '<div class="rspanel" hidden><div class="rstitle">' + esc_(date) + ' の施術室別・空き時間（' +
+    toHm_(DAY_WIN_S_) + '-' + toHm_(DAY_WIN_E_) + 'の営業想定）</div>' + rows + '</div>';
 }
 
 function esc_(s) {
@@ -1201,5 +1231,5 @@ var CSS_ =
 '  .rchips { display:flex; flex-wrap:wrap; gap:5px; }' +
 '  .rchips .slot { display:inline-block; background:var(--card); border:1px solid var(--line);' +
 '    border-radius:7px; padding:2px 8px; font-size:.82rem; font-variant-numeric:tabular-nums; }' +
-'  .rchips .none { color:#16a34a; font-size:.82rem; font-weight:700; }' +
+'  .rchips .none { color:var(--real); font-size:.82rem; font-weight:700; }' +
 '';
