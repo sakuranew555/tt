@@ -491,11 +491,9 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff, dev) {
           '<span class="no">' + (idx + 1) + '</span>' +
           '<span class="date">' + esc_(x.date) + '</span>' +
           '<span class="room" style="--rc:' + rc + '">' + esc_(x.room) + '</span>' +
-          '<button type="button" class="rstoggle">📋 空き部屋状況を見る</button>' +
           (x.dup_suspect ? '<span class="dup">⚠️同一人物の疑い(二重入力?)</span>' : '') +
           '<span class="ov">被り時間数 ' + x.overlap_min + '分（' + esc_(x.overlap_time) + '）</span>' +
         '</header>' +
-        roomStatusPanel_(x.date, roomBusyForDate) +
         '<div class="pair">' +
           '<div class="side">' +
             '<div class="time"><span class="ab abA">A</span>' + esc_(x.a_time) + '</div>' +
@@ -518,7 +516,11 @@ function renderPage_(conflicts, meta, payload, withNail, base, staff, dev) {
           ' href="https://timetreeapp.com/calendars/' + esc_(x.a_cal_id) + '/events/' + esc_(x.a_event_id) + '">' +
           '📅 TimeTree Appを開く</a>' +
         '<div class="mv" data-room="' + esc_(x.room) + '">' +
-          '<button type="button" class="mvtoggle">🔀 部屋を移して被りを解消</button>' +
+          '<div class="mvtoprow">' +
+            '<button type="button" class="mvtoggle">🔀 部屋を移して被りを解消</button>' +
+            '<button type="button" class="rstoggle">📋 空き部屋状況を見る</button>' +
+          '</div>' +
+          roomStatusPanel_(x.date, roomBusyForDate) +
           '<div class="mvpanel" hidden>' +
             moveRow_('A', x.a_cal_id, x.a_event_id, (x.a_staff || '') + ' ' + (x.a_name || ''), x.a_title, x.room, roomBusyForDate, x.a_time) +
             moveRow_('B', x.b_cal_id, x.b_event_id, (x.b_staff || '') + ' ' + (x.b_name || ''), x.b_title, x.room, roomBusyForDate, x.b_time) +
@@ -952,7 +954,8 @@ var MOVESCRIPT_ =
 '    var pn=card.querySelector(".rspanel"); if(pn) pn.hidden=!pn.hidden; return;' +
 '  }' +
 '  if(t.classList&&t.classList.contains("mvtoggle")){' +
-'    var pn=t.parentNode.querySelector(".mvpanel"); if(pn) pn.hidden=!pn.hidden; return;' +
+'    var mvw=t; while(mvw&&!(mvw.classList&&mvw.classList.contains("mv"))) mvw=mvw.parentNode; if(!mvw) return;' +
+'    var pn=mvw.querySelector(".mvpanel"); if(pn) pn.hidden=!pn.hidden; return;' +
 '  }' +
 '  if(t.classList&&t.classList.contains("mvbtn")){' +
 '    if(t.disabled) return;' +
@@ -1201,7 +1204,8 @@ var CSS_ =
 '  .empty { background:var(--card); border:1px solid var(--line); border-radius:12px;' +
 '    padding:40px; text-align:center; font-size:1.15rem; color:#16a34a; }' +
 '  .mv { margin-top:8px; }' +
-'  .mvtoggle { width:100%; text-align:center; font-size:.9rem; font-weight:700; color:var(--ink);' +
+'  .mvtoprow { display:flex; gap:8px; }' +
+'  .mvtoggle { flex:1 1 auto; text-align:center; font-size:.9rem; font-weight:700; color:var(--ink);' +
 '    background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px; cursor:pointer; }' +
 '  .mvtoggle:active { transform:translateY(1px); }' +
 '  .mvpanel { margin-top:8px; background:var(--bg); border:1px solid var(--line);' +
@@ -1220,10 +1224,10 @@ var CSS_ =
 '  .mvstatus.working { background:#fef9c3; color:#854d0e; }' +
 '  .mvstatus.ok { background:#dcfce7; color:#166534; }' +
 '  .mvstatus.err { background:#fee2e2; color:#991b1b; }' +
-'  .rstoggle { font-size:.78rem; font-weight:700; color:var(--ink); background:var(--bg);' +
-'    border:1px solid var(--line); border-radius:999px; padding:5px 12px; cursor:pointer; }' +
+'  .rstoggle { flex:0 0 auto; font-size:.78rem; font-weight:700; color:var(--ink); background:var(--bg);' +
+'    border:1px solid var(--line); border-radius:10px; padding:9px 12px; cursor:pointer; white-space:nowrap; }' +
 '  .rstoggle:active { transform:translateY(1px); }' +
-'  .rspanel { margin:0 0 8px; background:var(--bg); border:1px solid var(--line);' +
+'  .rspanel { margin:8px 0 0; background:var(--bg); border:1px solid var(--line);' +
 '    border-radius:10px; padding:8px 10px; }' +
 '  .rstitle { font-size:.8rem; font-weight:700; color:var(--sub); margin-bottom:6px; }' +
 '  .rstat { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:4px 0; }' +
